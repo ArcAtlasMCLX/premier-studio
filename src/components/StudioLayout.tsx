@@ -9,6 +9,7 @@ export function StudioLayout({ children }: { children: ReactNode }) {
   const onEngine = pathname.startsWith('/engine')
   const onSignal = pathname.startsWith('/signal')
   const onImages = pathname.startsWith('/images')
+  const onCases = pathname.startsWith('/case-studies')
 
   return (
     <div className="min-h-screen flex">
@@ -51,6 +52,14 @@ export function StudioLayout({ children }: { children: ReactNode }) {
             }`}
           >
             Image Bank
+          </Link>
+          <Link
+            to="/case-studies"
+            className={`block px-3 py-2 rounded-lg font-medium ${
+              onCases ? 'bg-white/10 text-white' : 'text-white/75 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Case Studies
           </Link>
           <span className="flex items-center justify-between px-3 py-2 rounded-lg text-white/40 cursor-default">
             Settings <em className="text-[10px] not-italic uppercase tracking-wide">soon</em>

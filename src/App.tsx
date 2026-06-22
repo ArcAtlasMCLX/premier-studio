@@ -7,6 +7,8 @@ import { InsightEditor } from './pages/InsightEditor'
 import { ContentEngine } from './pages/ContentEngine'
 import { Signal } from './pages/Signal'
 import { ImageBank } from './pages/ImageBank'
+import { CaseStudiesList } from './pages/CaseStudiesList'
+import { CaseStudyEditor } from './pages/CaseStudyEditor'
 
 export default function App() {
   return (
@@ -21,6 +23,9 @@ export default function App() {
               <Route path="/engine" element={<ContentEngine />} />
               <Route path="/signal" element={<Signal />} />
               <Route path="/images" element={<ImageBank />} />
+              <Route path="/case-studies" element={<CaseStudiesList />} />
+              <Route path="/case-studies/new" element={<CaseStudyEditor />} />
+              <Route path="/case-studies/:id" element={<CaseStudyEditor />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </StudioLayout>
