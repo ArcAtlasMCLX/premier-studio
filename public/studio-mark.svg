@@ -1,0 +1,5 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Premier Studio">
+  <rect width="64" height="64" rx="15" fill="#030D3A"/>
+  <path d="M32 13 L37.5 26.5 L51 32 L37.5 37.5 L32 51 L26.5 37.5 L13 32 L26.5 26.5 Z" fill="#00C896"/>
+  <path d="M47 14.5 L48.7 19.3 L53.5 21 L48.7 22.7 L47 27.5 L45.3 22.7 L40.5 21 L45.3 19.3 Z" fill="#00C896" opacity="0.6"/>
+</svg>
