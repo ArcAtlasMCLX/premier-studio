@@ -79,6 +79,29 @@ export function InsightsList() {
     }
   }
 
+  // ISO (UTC) ↔ datetime-local (browser-local) for the inline date editor.
+  function toLocalInput(iso: string | null | undefined): string {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  }
+
+  async function onChangeDate(item: Insight, value: string) {
+    const iso = value ? new Date(value).toISOString() : null
+    setBusyId(item.id)
+    setError(null)
+    try {
+      // Setting a date schedules it (the cron publishes when due, then rebuilds).
+      await updateInsight(item.id, { status: 'scheduled', scheduled_at: iso })
+      setItems((xs) => xs.map((x) => (x.id === item.id ? { ...x, status: 'scheduled', scheduled_at: iso } : x)))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function onUnpublish(item: Insight) {
     setBusyId(item.id)
     setError(null)
@@ -136,6 +159,7 @@ export function InsightsList() {
                 <th className="px-4 py-3 w-8"></th>
                 <th className="px-4 py-3 font-semibold">Title</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
+                <th className="px-4 py-3 font-semibold">Publish date</th>
                 <th className="px-4 py-3 font-semibold">Updated</th>
                 <th className="px-4 py-3 font-semibold text-right">Actions</th>
               </tr>
@@ -162,6 +186,21 @@ export function InsightsList() {
                     <span className={`px-2 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[i.status] ?? ''}`}>
                       {i.status}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {i.status === 'published' ? (
+                      <span className="text-ink-soft text-xs">
+                        {i.published_at ? new Date(i.published_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </span>
+                    ) : (
+                      <input
+                        type="datetime-local"
+                        value={toLocalInput(i.scheduled_at)}
+                        disabled={busyId === i.id}
+                        onChange={(e) => onChangeDate(i, e.target.value)}
+                        className="text-xs px-2 py-1 rounded-lg border border-line focus:outline-none focus:ring-2 focus:ring-teal/40"
+                      />
+                    )}
                   </td>
                   <td className="px-4 py-3 text-ink-soft">
                     {new Date(i.updated_at).toLocaleDateString('en-GB')}

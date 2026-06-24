@@ -68,9 +68,18 @@ export async function deleteInsight(id: string): Promise<void> {
   if (error) throw error
 }
 
-// Weekday publish slots (Mon–Fri, one per day) from `start`. Skips weekends and
-// rolls into following weeks if there are more than five.
-export function weekdaySlots(count: number, start: Date = new Date(), hour = 9): string[] {
+// The upcoming Monday at 2pm — "next week's" start (today-if-Monday rolls to +7).
+export function nextMonday(from: Date = new Date()): Date {
+  const d = new Date(from)
+  const add = ((1 - d.getDay() + 7) % 7) || 7
+  d.setDate(d.getDate() + add)
+  d.setHours(14, 0, 0, 0)
+  return d
+}
+
+// Weekday publish slots (Mon–Fri, one per day) from `start` at `hour`. Skips weekends
+// and rolls into following weeks if there are more than five. Defaults: next Monday, 2pm.
+export function weekdaySlots(count: number, start: Date = nextMonday(), hour = 14): string[] {
   const slots: string[] = []
   const d = new Date(start)
   d.setHours(hour, 0, 0, 0)
@@ -82,9 +91,9 @@ export function weekdaySlots(count: number, start: Date = new Date(), hour = 9):
   return slots
 }
 
-// Schedule the given insights (in order) one per weekday from today. The
+// Schedule the given insights (in order) one per weekday from next Monday, 2pm. The
 // auto-publish cron flips each to published when its slot is due, then rebuilds.
-export async function scheduleInsightsWeek(ids: string[], start: Date = new Date()): Promise<string[]> {
+export async function scheduleInsightsWeek(ids: string[], start: Date = nextMonday()): Promise<string[]> {
   const slots = weekdaySlots(ids.length, start)
   for (let i = 0; i < ids.length; i++) {
     await updateInsight(ids[i], { status: 'scheduled', scheduled_at: slots[i] })
