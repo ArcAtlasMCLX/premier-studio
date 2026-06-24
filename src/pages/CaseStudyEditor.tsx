@@ -5,6 +5,7 @@ import {
   homepageCount, triggerRebuild, slugify, HOMEPAGE_CAP,
   type CaseStudyDraft,
 } from '../lib/caseStudies'
+import { uploadCover } from '../lib/insights'
 
 const input = 'w-full px-3 py-2 rounded-lg border border-line text-sm focus:outline-none focus:ring-2 focus:ring-teal/40'
 const label = 'block text-xs font-semibold text-navy mb-1'
@@ -23,6 +24,7 @@ export function CaseStudyEditor() {
   const [slugTouched, setSlugTouched] = useState(false)
   const [homeUsed, setHomeUsed] = useState(0)
   const [busy, setBusy] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(isNew)
 
@@ -37,6 +39,15 @@ export function CaseStudyEditor() {
   }, [id, isNew])
 
   const set = <K extends keyof CaseStudyDraft>(k: K, v: CaseStudyDraft[K]) => setF((p) => ({ ...p, [k]: v }))
+
+  async function onUploadCover(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true); setError(null)
+    try { set('cover_image_url', await uploadCover(file)) }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    finally { setUploading(false) }
+  }
 
   // Turning the toggle on is blocked once 6 published studies already use it.
   const capReached = useMemo(
@@ -112,8 +123,20 @@ export function CaseStudyEditor() {
           <label className="block"><span className={label}>Date</span>
             <input type="date" className={input} value={f.study_date ?? ''} onChange={(e) => set('study_date', e.target.value)} /></label>
         </div>
-        <label className="block"><span className={label}>Cover image URL</span>
-          <input className={input} value={f.cover_image_url ?? ''} placeholder="assets/images/…" onChange={(e) => set('cover_image_url', e.target.value)} /></label>
+        <label className="block">
+          <span className={label}>Cover image</span>
+          <input className={input} value={f.cover_image_url ?? ''} placeholder="Upload a photo, or paste a URL…" onChange={(e) => set('cover_image_url', e.target.value)} />
+          <div className="flex items-center gap-3 mt-2">
+            <label className="text-xs font-semibold text-teal-ink cursor-pointer hover:underline">
+              {uploading ? 'Uploading…' : '＋ Upload photo'}
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={uploading} onChange={onUploadCover} />
+            </label>
+            {f.cover_image_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={f.cover_image_url} alt="" className="h-12 rounded border border-line object-cover" />
+            )}
+          </div>
+        </label>
         <label className="block"><span className={label}>Excerpt</span>
           <textarea className={input} rows={2} value={f.excerpt ?? ''} onChange={(e) => set('excerpt', e.target.value)} /></label>
         <label className="block"><span className={label}>Body <span className="text-ink-soft font-normal">(markdown)</span></span>
