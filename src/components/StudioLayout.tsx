@@ -1,10 +1,12 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { StudioHelp } from './StudioHelp'
 
 export function StudioLayout({ children }: { children: ReactNode }) {
   const { session, signOut } = useAuth()
   const { pathname } = useLocation()
+  const [helpOpen, setHelpOpen] = useState(false)
   const onInsights = pathname === '/' || pathname.startsWith('/insights')
   const onEngine = pathname.startsWith('/engine')
   const onSignal = pathname.startsWith('/signal')
@@ -61,6 +63,12 @@ export function StudioLayout({ children }: { children: ReactNode }) {
           >
             Case Studies
           </Link>
+          <button
+            onClick={() => setHelpOpen(true)}
+            className="block w-full text-left px-3 py-2 rounded-lg font-medium text-white/75 hover:text-white hover:bg-white/5"
+          >
+            ? Help
+          </button>
           <span className="flex items-center justify-between px-3 py-2 rounded-lg text-white/40 cursor-default">
             Settings <em className="text-[10px] not-italic uppercase tracking-wide">soon</em>
           </span>
@@ -76,6 +84,7 @@ export function StudioLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <main className="flex-1 bg-surface min-h-screen">{children}</main>
+      <StudioHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   )
 }
