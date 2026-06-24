@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { deleteCaseStudy, listCaseStudies, triggerRebuild, HOMEPAGE_CAP } from '../lib/caseStudies'
 import type { CaseStudy } from '../lib/caseStudies'
+import { CaseStudiesHelp } from '../components/CaseStudiesHelp'
 
 const STATUS_STYLE: Record<string, string> = {
   draft: 'bg-line text-ink-soft',
@@ -13,6 +14,7 @@ export function CaseStudiesList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   function load() {
     setLoading(true)
@@ -40,10 +42,19 @@ export function CaseStudiesList() {
     <div className="max-w-4xl mx-auto px-8 py-8">
       <div className="flex items-center justify-between mb-2">
         <h1 className="font-head text-2xl font-bold text-navy">Case Studies</h1>
-        <Link to="/case-studies/new" className="px-4 py-2 rounded-lg bg-teal text-navy font-head font-semibold text-sm">
-          ＋ New case study
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setHelpOpen(true)}
+            className="px-3 py-2 rounded-lg border border-line text-ink-soft hover:text-navy hover:border-navy font-head font-semibold text-sm"
+          >
+            ? Help
+          </button>
+          <Link to="/case-studies/new" className="px-4 py-2 rounded-lg bg-teal text-navy font-head font-semibold text-sm">
+            ＋ New case study
+          </Link>
+        </div>
       </div>
+      <CaseStudiesHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       <p className="text-ink-soft text-sm mb-5">
         Ordered by <strong>rank</strong> (lowest first = always-feature), then newest. Homepage shows the ones
         toggled on — <strong className={onHomepage >= HOMEPAGE_CAP ? 'text-orange' : ''}>{onHomepage}/{HOMEPAGE_CAP}</strong> selected.
