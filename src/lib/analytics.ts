@@ -4,17 +4,22 @@ import { supabase } from './supabase'
 // can later be swapped (Drains/GA/Plausible) without touching the view.
 export interface AnalyticsData {
   range: { from: string; to: string }
+  granularity?: 'day' | 'week'
   totals: { visitors: number; pageViews: number; bounceRate?: number }
   timeseries: Array<{ date: string; visitors: number; pageViews: number }>
   topPages: Array<{ path: string; visitors: number; pageViews: number }>
   topReferrers: Array<{ source: string; visitors: number }>
+  topCountries: Array<{ country: string; visitors: number }>
+  devices: Array<{ type: string; visitors: number }>
+  browsers: Array<{ name: string; visitors: number }>
 }
 
-export type Range = '7d' | '30d' | '90d'
+export type Range = '7d' | '30d' | '90d' | '1y'
 export const RANGES: { value: Range; label: string }[] = [
-  { value: '7d', label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: '90d', label: 'Last 90 days' },
+  { value: '7d', label: '7 days' },
+  { value: '30d', label: '30 days' },
+  { value: '90d', label: '90 days' },
+  { value: '1y', label: '12 months' },
 ]
 
 // Calls the author-gated `analytics` edge function (JWT attached automatically by
