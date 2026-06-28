@@ -6,6 +6,7 @@ const SECTIONS: [string, string][] = [
   ['signal', 'Signal'],
   ['images', 'Image Bank'],
   ['cases', 'Case Studies'],
+  ['analytics', 'Analytics'],
   ['general', 'General'],
 ]
 
@@ -180,6 +181,36 @@ export function StudioHelp({ open, onClose }: { open: boolean; onClose: () => vo
           </Section>
 
           {/* GENERAL */}
+          {/* ANALYTICS */}
+          <Section id="analytics" title="Analytics" intro="How the website is doing — visitor traffic, Google search, and growth over time.">
+            <Screen name="Analytics">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-navy">Three sections, one date range</span>
+                <span className="inline-flex gap-1"><Chip>7d</Chip><Chip>30d</Chip><Chip>90d</Chip><Chip>1y</Chip></span>
+              </div>
+              <Row mk={1} label="Traffic · Vercel — visits to the site">
+                <div className="flex gap-2"><Stat0 label="Visitors" v="—" /><Stat0 label="Page views" v="—" /><Stat0 label="Views / visitor" v="—" /></div>
+              </Row>
+              <Row mk={2} label="Search · Google — how people find you">
+                <div className="flex gap-2"><Stat0 label="Clicks" v="—" /><Stat0 label="Impressions" v="—" /><Stat0 label="Pages in search" v="—" /></div>
+              </Row>
+              <Row mk={3} label="Progress over time — captured daily from launch">
+                <div className="flex gap-2 items-end h-9">
+                  {[3,4,4,6,7,9,11].map((h, i) => <span key={i} className="w-2 rounded-t bg-teal/70" style={{ height: `${h * 3}px` }} />)}
+                </div>
+              </Row>
+            </Screen>
+            <Steps>
+              <Step n={1} title="Open Analytics.">From the sidebar. Everything respects the <UI>date range</UI> top-right (<UI>7d / 30d / 90d / 1y</UI>) — change it once and all three sections follow.</Step>
+              <Step n={2} title="Traffic · Vercel.">Real visits to the public website — <b>visitors</b>, <b>page views</b>, the trend over time, plus top pages, referrers, countries, devices and browsers. Refreshes about every 15 minutes.</Step>
+              <Step n={3} title="Search · Google.">How people find you on Google — <b>clicks</b>, <b>impressions</b>, <b>CTR</b>, average <b>position</b>, how many <b>pages</b> and <b>queries</b> you appear for, and your top queries and pages. Google’s data lags ~2–3 days.</Step>
+              <Step n={4} title="Be patient at first.">The site was only just submitted to Google, so Search starts at zero and fills in over the coming weeks as Google crawls and ranks it. An empty panel here is normal, not a fault.</Step>
+              <Step n={5} title="Progress over time.">A daily snapshot of your search footprint — <b>pages in search</b>, <b>impressions</b> and <b>clicks</b> — so you can watch the site grow from launch. Each sparkline shows the change since the first day recorded.</Step>
+              <Step n={6} title="It records itself.">A snapshot is saved automatically the first time someone opens this page each day on the <UI>30d</UI> view. No button to press — just visit now and then so the history keeps building.</Step>
+              <Step n={7} title="Reading it together.">Rising <b>impressions</b> = Google is showing you more; rising <b>clicks</b> and falling <b>position</b> (closer to 1) = you’re ranking better; <b>Traffic</b> then shows who actually arrived and what they read.</Step>
+            </Steps>
+          </Section>
+
           <Section id="general" title="General" intro="Things that apply across all of Studio.">
             <Steps>
               <Step n={1} title="Login.">Your CindersX account — the same sign-in used for Roadmap and the Brand Hub.</Step>
@@ -244,6 +275,14 @@ function Btn({ children, ai, primary }: { children: ReactNode; ai?: boolean; pri
 }
 function Chip({ children }: { children: ReactNode }) {
   return <span className="border border-line rounded-md px-3 py-1 text-[11px] text-ink-soft bg-surface">{children}</span>
+}
+function Stat0({ label, v }: { label: string; v: string }) {
+  return (
+    <div className="flex-1 border border-line rounded-md px-2 py-1.5 bg-white">
+      <div className="text-[10px] uppercase tracking-wide text-ink-soft">{label}</div>
+      <div className="font-head text-base font-bold text-navy leading-tight">{v}</div>
+    </div>
+  )
 }
 function Thumb() {
   return <span className="w-16 h-10 rounded-md bg-surface border border-line inline-flex items-center justify-center text-ink-soft text-xs">▣</span>

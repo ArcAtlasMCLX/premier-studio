@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchAnalytics, RANGES, type AnalyticsData, type Range } from '../lib/analytics'
-import { fetchSearch, type SearchData } from '../lib/searchConsole'
+import { fetchSearch, fetchSnapshots, type SearchData, type SeoSnapshot } from '../lib/searchConsole'
 
 export function Analytics() {
   const [range, setRange] = useState<Range>('30d')
@@ -9,6 +9,7 @@ export function Analytics() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [snaps, setSnaps] = useState<SeoSnapshot[]>([])
 
   useEffect(() => {
     let live = true
@@ -18,9 +19,11 @@ export function Analytics() {
       .then((d) => { if (live) setData(d) })
       .catch((e) => { if (live) setError(e instanceof Error ? e.message : String(e)) })
       .finally(() => { if (live) setLoading(false) })
+    // Search resolves first, then re-read snapshots so a just-written 30-day row shows.
     fetchSearch(range)
       .then((d) => { if (live) setSearch(d) })
       .catch((e) => { if (live) setSearchError(e instanceof Error ? e.message : String(e)) })
+      .finally(() => { fetchSnapshots().then((s) => { if (live) setSnaps(s) }).catch(() => {}) })
     return () => { live = false }
   }, [range])
 
@@ -92,11 +95,13 @@ export function Analytics() {
         <p className="text-ink-soft text-sm">Loading…</p>
       ) : search && !searchError ? (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
             <Stat label="Clicks" value={search.totals.clicks} />
             <Stat label="Impressions" value={search.totals.impressions} />
             <Stat label="CTR" value={search.totals.ctr * 100} decimals={1} suffix="%" />
             <Stat label="Avg position" value={search.totals.position} decimals={1} />
+            <Stat label="Pages in search" value={search.pagesCount ?? 0} />
+            <Stat label="Queries" value={search.queriesCount ?? 0} />
           </div>
           {searchEmpty ? (
             <EmptyCard>No search data yet — the site was just submitted to Google. Queries, clicks and rankings appear here over the coming weeks as it’s crawled and starts ranking.</EmptyCard>
@@ -114,6 +119,31 @@ export function Analytics() {
           )}
         </>
       ) : null}
+
+      {/* ---------- PROGRESS OVER TIME (SEO snapshots) ---------- */}
+      <h2 className="font-head text-sm font-bold uppercase tracking-wide text-ink-soft mt-9 mb-1 border-t border-line pt-7">Progress over time</h2>
+      <p className="text-ink-soft text-sm mb-5">The site’s search footprint, captured automatically each day from launch — so you can watch it grow.</p>
+
+      {snaps.length < 2 ? (
+        <EmptyCard>
+          Progress is recorded once a day whenever this page is opened on the 30-day view. Come back over the coming days and weeks — pages in search, impressions and clicks will build into a trend here.
+          {snaps.length === 1 && <span className="block mt-2 text-xs">First snapshot captured {snaps[0].day}. One more day and the chart begins.</span>}
+        </EmptyCard>
+      ) : (
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <Spark title="Pages in search" snaps={snaps} pick={(s) => s.pages} />
+            <Spark title="Impressions" snaps={snaps} pick={(s) => s.impressions} />
+            <Spark title="Clicks" snaps={snaps} pick={(s) => s.clicks} />
+          </div>
+          <Card title="Daily history">
+            <div className="max-h-72 overflow-y-auto">
+              <Table cols={['Day', 'Pages', 'Queries', 'Impr.', 'Clicks', 'Avg pos.']}
+                rows={[...snaps].reverse().map((s) => [s.day, s.pages, s.queries, s.impressions, s.clicks, s.position ? s.position.toFixed(1) : '—'])} />
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
@@ -176,6 +206,38 @@ function Chart({ series }: { series: AnalyticsData['timeseries'] }) {
       </svg>
       <div className="flex justify-between text-[11px] text-ink-soft mt-1"><span>{pts[0].date}</span><span>{pts[pts.length - 1].date}</span></div>
     </div>
+  )
+}
+
+// Single-metric growth sparkline normalised to its own max (each metric has its own scale,
+// so a shared axis would flatten clicks/pages against impressions). Shows latest value + change.
+function Spark({ title, snaps, pick }: { title: string; snaps: SeoSnapshot[]; pick: (s: SeoSnapshot) => number }) {
+  const vals = snaps.map(pick)
+  const latest = vals[vals.length - 1]
+  const first = vals[0]
+  const delta = latest - first
+  const W = 260, H = 56, P = 4
+  const max = Math.max(1, ...vals)
+  const x = (i: number) => P + (i * (W - 2 * P)) / (vals.length - 1)
+  const y = (v: number) => H - P - (v / max) * (H - 2 * P)
+  const line = vals.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('')
+  const area = `${line}L${x(vals.length - 1).toFixed(1)},${H - P}L${x(0).toFixed(1)},${H - P}Z`
+  return (
+    <section className="bg-white border border-line rounded-xl p-5">
+      <div className="text-xs font-semibold text-ink-soft uppercase tracking-wide">{title}</div>
+      <div className="flex items-baseline gap-2 mt-1 mb-3">
+        <span className="font-head text-3xl font-bold text-navy">{latest.toLocaleString('en-GB')}</span>
+        {delta !== 0 && (
+          <span className={`text-xs font-semibold ${delta > 0 ? 'text-teal-ink' : 'text-ink-soft'}`}>
+            {delta > 0 ? '▲' : '▼'} {Math.abs(delta).toLocaleString('en-GB')} since {snaps[0].day.slice(5)}
+          </span>
+        )}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={`${title} over time`}>
+        <path d={area} fill="var(--color-accent)" opacity="0.1" />
+        <path d={line} fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+    </section>
   )
 }
 
