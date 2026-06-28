@@ -12,6 +12,7 @@ export function StudioLayout({ children }: { children: ReactNode }) {
   const onSignal = pathname.startsWith('/signal')
   const onImages = pathname.startsWith('/images')
   const onCases = pathname.startsWith('/case-studies')
+  const onAnalytics = pathname.startsWith('/analytics')
 
   return (
     <div className="min-h-screen flex">
@@ -62,6 +63,14 @@ export function StudioLayout({ children }: { children: ReactNode }) {
             }`}
           >
             Case Studies
+          </Link>
+          <Link
+            to="/analytics"
+            className={`block px-3 py-2 rounded-lg font-medium ${
+              onAnalytics ? 'bg-white/10 text-white' : 'text-white/75 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Analytics
           </Link>
           <button
             onClick={() => setHelpOpen(true)}
