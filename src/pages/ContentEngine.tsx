@@ -13,11 +13,17 @@ export function ContentEngine() {
   const [job, setJob] = useState<GenJob | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [stalled, setStalled] = useState(false)
   const timer = useRef<number | undefined>(undefined)
+  const lastProgress = useRef(-1)
+  const lastChangeAt = useRef(0)
 
   useEffect(() => {
     if (!jobId) return
     let active = true
+    lastProgress.current = -1
+    lastChangeAt.current = Date.now()
+    setStalled(false)
     const tick = async () => {
       try {
         const j = await getJob(jobId)
@@ -25,6 +31,18 @@ export function ContentEngine() {
         setJob(j)
         if (j && (j.status === 'complete' || j.status === 'failed')) {
           window.clearInterval(timer.current)
+          return
+        }
+        // Stall watchdog: if progress hasn't moved for ~90s the background task
+        // may have been cut off after saving the drafts — point the user to Insights.
+        if (j) {
+          if (j.progress !== lastProgress.current) {
+            lastProgress.current = j.progress
+            lastChangeAt.current = Date.now()
+            setStalled(false)
+          } else if (Date.now() - lastChangeAt.current > 90000) {
+            setStalled(true)
+          }
         }
       } catch {
         /* transient — keep polling */
@@ -139,7 +157,14 @@ export function ContentEngine() {
               <div className="h-2 rounded-full bg-surface overflow-hidden">
                 <div className="h-full bg-teal transition-all" style={{ width: `${pct}%` }} />
               </div>
-              <p className="text-xs text-ink-soft mt-2">This runs in the background — you can leave this page.</p>
+              {stalled ? (
+                <p className="text-xs text-ink-soft mt-2">
+                  This is taking longer than usual — your drafts may already be saved.{' '}
+                  <Link to="/" className="text-teal-ink font-semibold">Check the Insights list →</Link>
+                </p>
+              ) : (
+                <p className="text-xs text-ink-soft mt-2">This runs in the background — you can leave this page.</p>
+              )}
             </div>
           )}
         </div>

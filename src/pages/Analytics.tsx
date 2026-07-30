@@ -10,22 +10,26 @@ export function Analytics() {
   const [error, setError] = useState<string | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [snaps, setSnaps] = useState<SeoSnapshot[]>([])
+  const [reload, setReload] = useState(0)
+  const retry = () => setReload((n) => n + 1)
 
   useEffect(() => {
     let live = true
     setLoading(true); setError(null); setSearchError(null)
-    // Two independent sources — one failing must not blank the other.
-    fetchAnalytics(range)
+    // Two independent sources — one failing must not blank the other. Each is
+    // bounded by a timeout so a slow/hung function surfaces a retry, not an
+    // endless spinner.
+    withTimeout(fetchAnalytics(range))
       .then((d) => { if (live) setData(d) })
       .catch((e) => { if (live) setError(e instanceof Error ? e.message : String(e)) })
       .finally(() => { if (live) setLoading(false) })
     // Search resolves first, then re-read snapshots so a just-written 30-day row shows.
-    fetchSearch(range)
+    withTimeout(fetchSearch(range))
       .then((d) => { if (live) setSearch(d) })
       .catch((e) => { if (live) setSearchError(e instanceof Error ? e.message : String(e)) })
       .finally(() => { fetchSnapshots().then((s) => { if (live) setSnaps(s) }).catch(() => {}) })
     return () => { live = false }
-  }, [range])
+  }, [range, reload])
 
   const empty = data && data.totals.visitors === 0 && data.totals.pageViews === 0 && data.topPages.length === 0
   const searchEmpty = search && search.totals.clicks === 0 && search.totals.impressions === 0
@@ -48,11 +52,11 @@ export function Analytics() {
       <h2 className="font-head text-sm font-bold uppercase tracking-wide text-ink-soft mt-5 mb-1">Traffic · Vercel</h2>
       <p className="text-ink-soft text-sm mb-5">Visits to the public website · refreshed every ~15 minutes.</p>
 
-      {error === 'unavailable' && <Notice>Traffic data is unavailable right now — please retry shortly.</Notice>}
-      {error && error !== 'unavailable' && <Notice tone="error">Couldn’t load traffic: {error}</Notice>}
+      {error === 'unavailable' && <Notice onRetry={retry}>Traffic data is unavailable right now — please retry shortly.</Notice>}
+      {error && error !== 'unavailable' && <Notice tone="error" onRetry={retry}>Couldn’t load traffic: {error}</Notice>}
 
-      {loading && !data ? (
-        <p className="text-ink-soft text-sm">Loading…</p>
+      {loading && !data && !error ? (
+        <Spinner label="Loading traffic…" />
       ) : data && !error ? (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -89,10 +93,10 @@ export function Analytics() {
       <h2 className="font-head text-sm font-bold uppercase tracking-wide text-ink-soft mt-9 mb-1 border-t border-line pt-7">Search · Google</h2>
       <p className="text-ink-soft text-sm mb-5">How people find you on Google · Search Console data lags ~2–3 days.</p>
 
-      {searchError && <Notice tone="error">Couldn’t load search data: {searchError}</Notice>}
+      {searchError && <Notice tone="error" onRetry={retry}>Couldn’t load search data: {searchError}</Notice>}
 
       {!search && !searchError ? (
-        <p className="text-ink-soft text-sm">Loading…</p>
+        <Spinner label="Loading search data…" />
       ) : search && !searchError ? (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
@@ -175,12 +179,36 @@ function EmptyCard({ children }: { children: React.ReactNode }) {
   return <div className="bg-white border border-line rounded-xl p-10 text-center text-ink-soft">{children}</div>
 }
 
-function Notice({ children, tone }: { children: React.ReactNode; tone?: 'error' }) {
+function Notice({ children, tone, onRetry }: { children: React.ReactNode; tone?: 'error'; onRetry?: () => void }) {
   return (
-    <div className={`rounded-xl border px-4 py-3 text-sm mb-5 ${tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-line bg-surface text-ink-soft'}`}>
-      {children}
+    <div className={`rounded-xl border px-4 py-3 text-sm mb-5 flex items-center gap-3 flex-wrap ${tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-line bg-surface text-ink-soft'}`}>
+      <span>{children}</span>
+      {onRetry && (
+        <button onClick={onRetry} className="ml-auto font-semibold underline hover:no-underline">
+          Retry
+        </button>
+      )}
     </div>
   )
+}
+
+// Branded loader — the Premier "ring" mark, spinning (static under reduced-motion).
+function Spinner({ label }: { label?: string }) {
+  return (
+    <div className="flex items-center gap-3 text-ink-soft text-sm py-6">
+      <img src="/logo-wheel.webp" alt="" width={26} height={26}
+        className="motion-safe:animate-spin" style={{ animationDuration: '1.1s' }} />
+      {label ?? 'Loading…'}
+    </div>
+  )
+}
+
+// Bound a promise so a hung edge function surfaces a retry instead of an endless spinner.
+function withTimeout<T>(p: Promise<T>, ms = 20000): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timed out')), ms)),
+  ])
 }
 
 // Dual-line trend: page views (teal accent) + visitors (navy). Neither is a reserved value colour.
