@@ -3,7 +3,7 @@ import { fetchAnalytics, RANGES, type AnalyticsData, type Range } from '../lib/a
 import { fetchSearch, fetchSnapshots, type SearchData, type SeoSnapshot } from '../lib/searchConsole'
 import {
   fetchSearchVisibility, readingMetrics, parseGscCsv, windowDaysInclusive, ingestReading,
-  type SearchVisibility, type GscRow, type Reading,
+  type SearchVisibility, type GscRow, type Reading, type SearchEvent,
 } from '../lib/searchVisibility'
 
 export function Analytics() {
@@ -377,55 +377,79 @@ function Delta({ label, value, base, suffix = '' }: { label: string; value: numb
 }
 
 // Trend of "terms in top 10" per reading on a fixed 0..N scale (so the count is honest),
-// annotated with search_event markers. Renders 1..N points — a single baseline reading
-// shows as one labelled dot, not an error or a hidden chart.
+// annotated with search_event markers. Renders 1..N points.
 function SvTrend({ sv }: { sv: SearchVisibility }) {
   const pts = sv.readings.map((r) => ({ r, top10: readingMetrics(sv, r.id).top10, t: Date.parse(r.period_end + 'T00:00:00Z') }))
   const evs = sv.events.map((e) => ({ e, t: Date.parse(e.occurred_on + 'T00:00:00Z') }))
-  const W = 720, H = 190, P = 24
+  const maxY = Math.max(1, sv.tracked.length)
+  const single = pts.length === 1
+  const W = 720, P = 24
+  const H = pts.length < 3 ? 120 : 190           // (4) shorter until there's a real trend
+  const y = (v: number) => H - P - (v / maxY) * (H - 2 * P)
+
+  // (3) One reading = no meaningful time axis: centre the dot, show its one date, and keep
+  // events in the legend only — plotting them on a collapsed axis just pins them to the
+  // edges (2). They begin annotating the chart once there are two or more readings.
+  if (single) {
+    const p = pts[0]
+    return (
+      <div>
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Terms in the top 10 (baseline only)">
+          <line x1={P} y1={y(0)} x2={W - P} y2={y(0)} stroke="var(--pc-navy)" strokeOpacity="0.12" strokeWidth="1" />
+          <circle cx={W / 2} cy={y(p.top10)} r={5} fill="var(--color-accent)" />
+          <text x={W / 2} y={y(p.top10) - 9} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--pc-navy)">{p.top10}</text>
+        </svg>
+        <p className="text-[11px] text-ink-soft mt-1 text-center">
+          {fmtD(p.r.period_end)} · 0–{sv.tracked.length} scale · baseline only — the trend line begins with the next reading.
+        </p>
+        {evs.length > 0 && <EventLegend evs={evs} note="Timeline markers appear on the chart once there are two or more readings." />}
+      </div>
+    )
+  }
+
+  // (2) Domain spans readings AND events, so every marker lands inside the plot.
   const allT = [...pts.map((p) => p.t), ...evs.map((e) => e.t)]
   const tMin = Math.min(...allT), tMax = Math.max(...allT)
   const span = Math.max(1, tMax - tMin)
-  const maxY = Math.max(1, sv.tracked.length)
   const x = (t: number) => P + ((t - tMin) / span) * (W - 2 * P)
-  const y = (v: number) => H - P - (v / maxY) * (H - 2 * P)
-  const single = pts.length === 1
-
   return (
     <div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Terms in the top 10 per reading">
         <line x1={P} y1={y(0)} x2={W - P} y2={y(0)} stroke="var(--pc-navy)" strokeOpacity="0.12" strokeWidth="1" />
         {evs.map((e, i) => (
           <line key={i} x1={x(e.t)} y1={P - 8} x2={x(e.t)} y2={H - P}
-            stroke="var(--pc-navy)" strokeOpacity="0.28" strokeWidth="1" strokeDasharray="3 3" />
+            stroke="var(--pc-navy)" strokeOpacity="0.3" strokeWidth="1" strokeDasharray="3 3" />
         ))}
-        {!single && (
-          <path d={pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.top10).toFixed(1)}`).join('')}
-            fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" />
-        )}
+        <path d={pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.top10).toFixed(1)}`).join('')}
+          fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinejoin="round" />
         {pts.map((p, i) => (
           <g key={i}>
-            <circle cx={x(p.t)} cy={y(p.top10)} r={single ? 5 : 3.5} fill="var(--color-accent)" />
+            <circle cx={x(p.t)} cy={y(p.top10)} r={3.5} fill="var(--color-accent)" />
             <text x={x(p.t)} y={y(p.top10) - 9} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--pc-navy)">{p.top10}</text>
           </g>
         ))}
       </svg>
       <div className="flex justify-between text-[11px] text-ink-soft mt-1">
         <span>{fmtD(pts[0].r.period_end)}</span>
-        <span>0–{sv.tracked.length} scale · {single ? 'baseline only' : `${pts.length} readings`}</span>
+        <span>0–{sv.tracked.length} scale · {pts.length} readings</span>
         <span>{fmtD(pts[pts.length - 1].r.period_end)}</span>
       </div>
-      {evs.length > 0 && (
-        <ul className="mt-3 space-y-1 border-t border-line pt-3">
-          {evs.map((e, i) => (
-            <li key={i} className="text-xs text-ink-soft flex gap-2">
-              <span className="text-navy font-semibold tabular-nums shrink-0">{fmtD(e.e.occurred_on)}</span>
-              <span>{e.e.label}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {evs.length > 0 && <EventLegend evs={evs} />}
     </div>
+  )
+}
+
+function EventLegend({ evs, note }: { evs: { e: SearchEvent; t: number }[]; note?: string }) {
+  return (
+    <ul className="mt-3 space-y-1 border-t border-line pt-3">
+      {note && <li className="text-[11px] text-ink-soft italic mb-1 list-none">{note}</li>}
+      {evs.map((ev, i) => (
+        <li key={i} className="text-xs text-ink-soft flex gap-2">
+          <span className="text-navy font-semibold tabular-nums shrink-0">{fmtD(ev.e.occurred_on)}</span>
+          <span>{ev.e.label}</span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -464,7 +488,7 @@ function SvDetailTable({ sv, baseline, latest }: { sv: SearchVisibility; baselin
     : <>{p.toFixed(1)}</>
 
   return (
-    <div className="max-h-96 overflow-y-auto">
+    <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs uppercase tracking-wide text-ink-soft">
