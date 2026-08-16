@@ -108,6 +108,34 @@ export interface SpotlightResult {
   cutout: boolean
 }
 
+// supabase-js collapses every non-2xx from an edge function into the same opaque
+// message ("Edge Function returned a non-2xx status code"). Dig the real status +
+// reason out of error.context (the underlying Response) and phrase it for a human,
+// always tagged with a "Code: N2XX·<status>" reference so a support report is precise.
+async function friendlyFunctionError(error: unknown): Promise<string> {
+  const ctx = (error as { context?: Response }).context
+  let status = 0
+  let reason = ''
+  if (ctx && typeof ctx.status === 'number') {
+    status = ctx.status
+    try {
+      const body = await ctx.clone().json()
+      if (body?.error) reason = typeof body.error === 'string' ? body.error : JSON.stringify(body.error)
+    } catch {
+      // No JSON body — e.g. a 546 where the isolate was killed mid-request.
+    }
+  }
+  const code = status ? `Code: N2XX·${status}` : 'Code: N2XX'
+  if (reason) return `${reason} (${code})`
+  if (status === 546) {
+    return `That photo was too large or complex to process — try a smaller image, or hit Regenerate. (${code})`
+  }
+  if (status === 504 || status === 408) return `The image service timed out — please try again. (${code})`
+  if (status === 429) return `The image service is busy right now — wait a moment and try again. (${code})`
+  if (status >= 500) return `The image service hit a problem — please try again. (${code})`
+  return `Couldn’t generate the image — please try again. (${code})`
+}
+
 // Polish + brand + ratio an Image-Bank photo. Returns the public URL + storage path.
 export async function spotlight(opts: SpotlightOpts): Promise<SpotlightResult> {
   const { data, error } = await supabase.functions.invoke('process-image', {
@@ -125,8 +153,10 @@ export async function spotlight(opts: SpotlightOpts): Promise<SpotlightResult> {
       cutout: opts.style === 'cutout',
     },
   })
-  if (error) throw error
-  if (!data?.url) throw new Error(data?.error || 'Spotlight failed')
+  if (error) throw new Error(await friendlyFunctionError(error))
+  if (!data?.url) {
+    throw new Error(String(data?.error || 'Couldn’t generate the image — please try again.'))
+  }
   return {
     url: data.url as string,
     path: (data.path as string) ?? null,

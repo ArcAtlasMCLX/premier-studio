@@ -128,7 +128,11 @@ export function ImageBank() {
         treatment, then <strong>Save to bank</strong> to keep the finished image here for reuse.
       </p>
 
-      {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+      {error && (
+        <p role="alert" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {error}
+        </p>
+      )}
 
       {loading ? (
         <p className="text-ink-soft text-sm">Loading…</p>
@@ -355,7 +359,11 @@ function SpotlightModal({
           </div>
         </div>
 
-        {error && <p className="text-red-600 text-sm mt-4">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {error}
+          </p>
+        )}
 
         {result && (
           <div className="mt-5">
