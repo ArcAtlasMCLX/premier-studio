@@ -7,6 +7,7 @@ import { InsightEditor } from './pages/InsightEditor'
 import { ContentEngine } from './pages/ContentEngine'
 import { Signal } from './pages/Signal'
 import { ImageBank } from './pages/ImageBank'
+import { Spotlight } from './pages/Spotlight'
 import { CaseStudiesList } from './pages/CaseStudiesList'
 import { CaseStudyEditor } from './pages/CaseStudyEditor'
 import { Analytics } from './pages/Analytics'
@@ -24,6 +25,8 @@ export default function App() {
               <Route path="/engine" element={<ContentEngine />} />
               <Route path="/signal" element={<Signal />} />
               <Route path="/images" element={<ImageBank />} />
+              <Route path="/spotlight" element={<Spotlight />} />
+              <Route path="/spotlight/:imageId" element={<Spotlight />} />
               <Route path="/case-studies" element={<CaseStudiesList />} />
               <Route path="/case-studies/new" element={<CaseStudyEditor />} />
               <Route path="/case-studies/:id" element={<CaseStudyEditor />} />

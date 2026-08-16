@@ -11,6 +11,7 @@ export function StudioLayout({ children }: { children: ReactNode }) {
   const onEngine = pathname.startsWith('/engine')
   const onSignal = pathname.startsWith('/signal')
   const onImages = pathname.startsWith('/images')
+  const onSpotlight = pathname.startsWith('/spotlight')
   const onCases = pathname.startsWith('/case-studies')
   const onAnalytics = pathname.startsWith('/analytics')
 
@@ -55,6 +56,14 @@ export function StudioLayout({ children }: { children: ReactNode }) {
             }`}
           >
             Image Bank
+          </Link>
+          <Link
+            to="/spotlight"
+            className={`block px-3 py-2 rounded-lg font-medium ${
+              onSpotlight ? 'bg-white/10 text-white' : 'text-white/75 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Spotlight
           </Link>
           <Link
             to="/case-studies"
