@@ -11,6 +11,8 @@ import { Spotlight } from './pages/Spotlight'
 import { CaseStudiesList } from './pages/CaseStudiesList'
 import { CaseStudyEditor } from './pages/CaseStudyEditor'
 import { Analytics } from './pages/Analytics'
+import { UpdatesList } from './pages/UpdatesList'
+import { UpdateViewer } from './pages/UpdateViewer'
 
 export default function App() {
   return (
@@ -31,6 +33,8 @@ export default function App() {
               <Route path="/case-studies/new" element={<CaseStudyEditor />} />
               <Route path="/case-studies/:id" element={<CaseStudyEditor />} />
               <Route path="/analytics" element={<Analytics />} />
+              <Route path="/analytics/updates" element={<UpdatesList />} />
+              <Route path="/analytics/updates/:slug" element={<UpdateViewer />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </StudioLayout>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { fetchAnalytics, RANGES, type AnalyticsData, type Range } from '../lib/analytics'
 import { fetchSearch, fetchSnapshots, type SearchData, type SeoSnapshot } from '../lib/searchConsole'
 import {
@@ -137,7 +138,10 @@ export function Analytics() {
       ) : null}
 
       {/* ---------- SEARCH VISIBILITY (the baseline scorecard — the plan's metric) ---------- */}
-      <h2 className="font-head text-sm font-bold uppercase tracking-wide text-ink-soft mt-9 mb-1 border-t border-line pt-7">Search visibility</h2>
+      <div className="mt-9 border-t border-line pt-7 flex items-baseline justify-between gap-3 flex-wrap mb-1">
+        <h2 className="font-head text-sm font-bold uppercase tracking-wide text-ink-soft">Search visibility</h2>
+        <Link to="/analytics/updates" className="text-sm text-teal-ink font-semibold hover:underline">Updates — client reports ↗</Link>
+      </div>
       <p className="text-ink-soft text-sm mb-5">30 tracked commercial queries · fixed 28-day windows · how many reach the top 10.</p>
 
       {svError ? (
