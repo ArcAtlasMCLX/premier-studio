@@ -3,13 +3,18 @@ import { Link, useParams } from 'react-router-dom'
 import { getReport, signedUrl, periodLabel, type Report } from '../lib/reports'
 
 // A report is a COMPLETE standalone HTML document (own <head>, Google Fonts, full
-// stylesheet). It's rendered in an iframe so its styles can't collide with Studio's —
-// never injected into the Studio DOM. Studio sets no CSP, so the storage-origin iframe
-// loads freely; the private bucket is reached via a time-limited signed URL.
+// stylesheet), rendered in a sandboxed iframe so its styles can't collide with Studio's.
+// It is FETCHED and injected via `srcDoc`, not pointed at with `src`: Supabase Storage
+// serves HTML objects as text/plain on egress (a platform XSS guard on the supabase.co
+// origin — not configurable, no upload-side fix), so an iframe `src` shows source. srcDoc
+// is parsed as HTML by definition, which sidesteps the served content-type entirely; and
+// fetch().text() decodes as UTF-8 regardless of the header, so the document's own
+// characters (em-dashes etc.) come through clean.
 export function UpdateViewer() {
   const { slug } = useParams<{ slug: string }>()
   const [report, setReport] = useState<Report | null | undefined>(undefined) // undefined = loading
-  const [htmlUrl, setHtmlUrl] = useState<string | null>(null)
+  const [htmlDoc, setHtmlDoc] = useState<string | null>(null)                 // fetched HTML → iframe srcDoc
+  const [htmlUrl, setHtmlUrl] = useState<string | null>(null)                 // signed URL for the "Open raw HTML" link
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -24,6 +29,10 @@ export function UpdateViewer() {
         try {
           const html = await signedUrl(r.html_path)
           if (live) setHtmlUrl(html)
+          const res = await fetch(html)
+          if (!res.ok) throw new Error(`Report fetch failed (${res.status})`)
+          const text = await res.text()
+          if (live) setHtmlDoc(text)
           if (r.pdf_path) {
             const pdf = await signedUrl(r.pdf_path, 3600, true)
             if (live) setPdfUrl(pdf)
@@ -65,10 +74,11 @@ export function UpdateViewer() {
 
           {error && <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">{error}</p>}
 
-          {htmlUrl ? (
+          {htmlDoc ? (
             <iframe
-              src={htmlUrl}
+              srcDoc={htmlDoc}
               title={report.title}
+              sandbox=""
               className="w-full bg-white border border-line rounded-xl"
               style={{ height: 'calc(100vh - 220px)', minHeight: '520px' }}
               referrerPolicy="no-referrer"
