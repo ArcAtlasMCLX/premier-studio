@@ -13,6 +13,7 @@ import { CaseStudyEditor } from './pages/CaseStudyEditor'
 import { Analytics } from './pages/Analytics'
 import { UpdatesList } from './pages/UpdatesList'
 import { UpdateViewer } from './pages/UpdateViewer'
+import { AutoInsightsLog } from './pages/AutoInsightsLog'
 
 export default function App() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/analytics/updates" element={<UpdatesList />} />
               <Route path="/analytics/updates/:slug" element={<UpdateViewer />} />
+              <Route path="/auto-insights" element={<AutoInsightsLog />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </StudioLayout>
