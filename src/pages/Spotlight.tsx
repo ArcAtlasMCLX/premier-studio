@@ -1,16 +1,34 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
+  cutoutSubject,
+  downloadSource,
   listImages,
-  signedThumb,
-  spotlight,
   saveSpotlightToBank,
+  signedThumb,
+  uploadSpotlight,
   type ImageBankItem,
-  type Ratio,
   type SpotlightResult,
-  type SpotStyle,
-  type WheelColor,
 } from '../lib/imageBank'
+import {
+  alphaBbox,
+  autoFrame,
+  COLOR_HEX,
+  DEFAULT_VIEW,
+  DIMS,
+  ensureFonts,
+  exportPng,
+  loadImage,
+  MAX_ZOOM,
+  pickColor,
+  renderSpotlight,
+  type Color,
+  type Ratio,
+  type SpotStyle,
+  type View,
+} from '../lib/spotlightCanvas'
+
+type ColorChoice = 'auto' | Color
 
 const RATIOS: { value: Ratio; label: string }[] = [
   { value: '1.91:1', label: 'Wide · 1.91:1 (LinkedIn / OG)' },
@@ -23,21 +41,21 @@ const STYLES: { value: SpotStyle; label: string }[] = [
   { value: 'colourings', label: 'Colourings · colour grade + wheel arcs' },
   { value: 'cutout', label: 'Cut-out · subject kept, background graded' },
 ]
-const COLORS: { value: WheelColor; label: string }[] = [
+const COLORS: { value: ColorChoice; label: string }[] = [
   { value: 'auto', label: 'Auto · best fit for the photo' },
   { value: 'blue', label: 'Blue (Dependable)' },
   { value: 'green', label: 'Green (Expert)' },
   { value: 'orange', label: 'Orange (Dynamic)' },
-  { value: 'yellow', label: 'Yellow (Proud)' },
 ]
 const HEADLINE_MAX = 80
 const inputCls =
   'w-full px-3 py-2 rounded-lg border border-line focus:outline-none focus:ring-2 focus:ring-teal/40'
 
 // Spotlight — the brand-image workshop. Tier 2 of the two-tier model: the Image Bank
-// holds the raw upload; here it's cropped, brand-treated and downscaled to a sane size
-// (the downscale itself happens server-side in process-image). Landed on directly via
-// the nav ("choose a source") or from an Image Bank card ("Open in Spotlight").
+// holds the raw upload; here it's framed, brand-treated and exported. The picture is
+// composed live on a canvas in the browser (lib/spotlightCanvas.ts) — the only server
+// step is the Cut-out's background removal. Landed on via the nav ("choose a source")
+// or from an Image Bank card ("Open in Spotlight").
 export function Spotlight() {
   const { imageId } = useParams()
   const navigate = useNavigate()
@@ -45,19 +63,30 @@ export function Spotlight() {
   const [items, setItems] = useState<ImageBankItem[]>([])
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const [ratio, setRatio] = useState<Ratio>('1.91:1')
   const [style, setStyle] = useState<SpotStyle>('standard')
-  const [color, setColor] = useState<WheelColor>('auto')
+  const [color, setColor] = useState<ColorChoice>('auto')
   const [eyebrow, setEyebrow] = useState('')
   const [headline, setHeadline] = useState('')
   const [subhead, setSubhead] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [view, setView] = useState<View>(DEFAULT_VIEW)
+
+  const [base, setBase] = useState<HTMLImageElement | null>(null)
+  const [autoColor, setAutoColor] = useState<Color>('blue')
+  const [subject, setSubject] = useState<HTMLImageElement | null>(null)
+  const [bbox, setBbox] = useState<ReturnType<typeof alphaBbox>>(null)
+  const [logo, setLogo] = useState<HTMLImageElement | null>(null)
+  const [fontsReady, setFontsReady] = useState(false)
+
+  const [cutting, setCutting] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [result, setResult] = useState<SpotlightResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState<SpotlightResult | null>(null)
   const [copied, setCopied] = useState(false)
+
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
 
   async function refresh() {
     setLoading(true)
@@ -79,49 +108,120 @@ export function Spotlight() {
 
   useEffect(() => {
     refresh()
+    ensureFonts().then(() => setFontsReady(true))
+    loadImage('/logo-wheel.webp').then(setLogo).catch(() => null)
   }, [])
 
   // Only raw uploads are valid sources (not finished spotlights).
   const sources = useMemo(() => items.filter((i) => !i.public_url), [items])
   const active = useMemo(() => items.find((i) => i.id === imageId) ?? null, [items, imageId])
 
-  // Switching source image resets the render but keeps the text controls (often reused).
+  // Load the source photo as bytes (keeps the canvas exportable). Switching source
+  // drops the cut-out and the saved result but keeps the text controls (often reused).
   useEffect(() => {
-    setResult(null)
+    setBase(null)
+    setSubject(null)
+    setBbox(null)
+    setSaved(null)
     setError(null)
-    setSaved(false)
-  }, [imageId])
-
-  async function onGenerate() {
+    setView(DEFAULT_VIEW)
     if (!active) return
-    setBusy(true)
-    setError(null)
-    setSaved(false)
-    try {
-      const res = await spotlight({
-        imageId: active.id,
-        ratio,
-        style,
-        color,
-        eyebrow: eyebrow.trim() || undefined,
-        headline: headline.trim() || undefined,
-        subhead: subhead.trim() || undefined,
+    let cancelled = false
+    downloadSource(active.storage_path)
+      .then(loadImage)
+      .then((img) => {
+        if (cancelled) return
+        setBase(img)
+        setAutoColor(pickColor(img))
       })
-      setResult(res)
+      .catch((err) => !cancelled && setError(err instanceof Error ? err.message : String(err)))
+    return () => {
+      cancelled = true
+    }
+  }, [active])
+
+  const resolvedColor: Color = color === 'auto' ? autoColor : color
+
+  // Any change to the composition invalidates a previous save.
+  useEffect(() => {
+    setSaved(null)
+  }, [ratio, style, resolvedColor, eyebrow, headline, subhead, view, subject])
+
+  // Re-frame when the ratio changes: zoom on the subject for Cut-out, else plain cover.
+  useEffect(() => {
+    setView(style === 'cutout' && bbox && base ? autoFrame(bbox, base, ratio) : DEFAULT_VIEW)
+  }, [ratio, style, bbox, base])
+
+  const draw = useCallback(() => {
+    const c = canvasRef.current
+    if (!c || !base) return
+    const { w, h } = DIMS[ratio]
+    if (c.width !== w || c.height !== h) {
+      c.width = w
+      c.height = h
+    }
+    const g = c.getContext('2d')
+    if (!g) return
+    renderSpotlight(g, {
+      base, subject: style === 'cutout' ? subject : null, logo,
+      ratio, style, color: resolvedColor, eyebrow, headline, subhead, view,
+    })
+  }, [base, subject, logo, ratio, style, resolvedColor, eyebrow, headline, subhead, view, fontsReady])
+
+  useEffect(() => {
+    const id = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(id)
+  }, [draw])
+
+  // Drag the photo to reposition it inside the frame.
+  function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    dragRef.current = { x: e.clientX, y: e.clientY, panX: view.panX, panY: view.panY }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    const d = dragRef.current
+    if (!d) return
+    const k = e.currentTarget.width / e.currentTarget.getBoundingClientRect().width
+    setView((v) => ({ ...v, panX: d.panX + (e.clientX - d.x) * k, panY: d.panY + (e.clientY - d.y) * k }))
+  }
+  function onPointerUp() {
+    dragRef.current = null
+  }
+
+  async function onCutout() {
+    if (!active || !base) return
+    setCutting(true)
+    setError(null)
+    try {
+      const img = await loadImage(await cutoutSubject(active.id))
+      const bb = alphaBbox(img)
+      setSubject(img)
+      setBbox(bb)
+      setView(autoFrame(bb, base, ratio))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setBusy(false)
+      setCutting(false)
+    }
+  }
+
+  function currentInput() {
+    if (!base) throw new Error('Photo still loading')
+    return {
+      base, subject: style === 'cutout' ? subject : null, logo,
+      ratio, style, color: resolvedColor, eyebrow, headline, subhead, view,
     }
   }
 
   async function onSave() {
-    if (!result || !active) return
+    if (!active || !base) return
     setSaving(true)
     setError(null)
     try {
+      const png = await exportPng(currentInput())
+      const result = await uploadSpotlight(png)
       await saveSpotlightToBank(result, headline.trim() || active.title || 'Spotlight')
-      setSaved(true)
+      setSaved(result)
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -131,22 +231,24 @@ export function Spotlight() {
   }
 
   async function onDownload() {
-    if (!result) return
+    if (!base) return
     try {
-      const r = await fetch(result.url)
-      const blob = await r.blob()
+      const png = await exportPng(currentInput())
       const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = 'spotlight.png'
+      a.href = URL.createObjectURL(png)
+      a.download = `spotlight-${ratio.replace(':', 'x')}.png`
       a.click()
       URL.revokeObjectURL(a.href)
-    } catch {
-      window.open(result.url, '_blank')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
+  const needsCutout = style === 'cutout' && !subject
+  const { w: outW, h: outH } = DIMS[ratio]
+
   return (
-    <div className="max-w-5xl mx-auto px-8 py-8">
+    <div className="max-w-6xl mx-auto px-8 py-8">
       <div className="flex items-start justify-between gap-4 mb-2">
         <h1 className="font-head text-2xl font-bold text-navy">Spotlight</h1>
         {active && (
@@ -154,9 +256,9 @@ export function Spotlight() {
         )}
       </div>
       <p className="text-ink-soft text-sm mb-6">
-        Crop a photo to a ratio and apply the Premier brand treatment. Pick a source image from your{' '}
+        Frame a photo to a ratio and apply the Premier brand treatment. Pick a source image from your{' '}
         <Link to="/images" className="text-teal-ink font-semibold">Image Bank</Link>, choose a style,
-        then <strong>Generate</strong> — and <strong>Save to bank</strong> to keep the finished image.
+        drag the picture to position it, then <strong>Save to bank</strong> to keep the finished image.
       </p>
 
       {error && (
@@ -199,42 +301,68 @@ export function Spotlight() {
         )
       ) : (
         // ---- Workshop --------------------------------------------------------
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">
-          <div className="space-y-4">
-            <div className="aspect-square bg-surface rounded-lg overflow-hidden border border-line">
-              {thumbs[active.id] ? <img src={thumbs[active.id]} alt="" className="w-full h-full object-cover" /> : null}
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+          <div className="space-y-3">
+            <div className="bg-white border border-line rounded-xl p-4 flex flex-col items-center gap-2">
+              {base ? (
+                <canvas
+                  ref={canvasRef}
+                  onPointerDown={onPointerDown}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerCancel={onPointerUp}
+                  className="max-w-full max-h-[70vh] rounded-lg shadow-md cursor-grab active:cursor-grabbing touch-none"
+                  aria-label="Spotlight preview — drag to reposition the photo"
+                />
+              ) : (
+                <div className="aspect-square w-full max-w-sm bg-surface rounded-lg flex items-center justify-center text-ink-soft text-sm">
+                  Loading photo…
+                </div>
+              )}
+              <p className="text-xs text-ink-soft">
+                {outW}×{outH} · drag to reposition
+                {style !== 'standard' && <span> · wheel colour <span className="font-semibold capitalize">{resolvedColor}</span></span>}
+                {style === 'cutout' && subject && <span> · subject cut out ✓</span>}
+              </p>
             </div>
-            {result && (
-              <div>
-                <img src={result.url} alt="Spotlight result" className="w-full rounded-lg border border-line" />
-                {result.color && (
-                  <p className="text-xs text-ink-soft mt-2">
-                    Wheel colour: <span className="font-semibold capitalize">{result.color}</span>
-                    {style === 'cutout' && (result.cutout
-                      ? <span> · subject cut out ✓</span>
-                      : <span className="text-orange"> · cut-out unavailable (used flat grade)</span>)}
-                  </p>
-                )}
-                <div className="flex flex-wrap items-center gap-4 mt-3">
+
+            {needsCutout && (
+              <div className="rounded-lg border border-line bg-white px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                <span className="text-sm text-ink-soft">Cut-out removes the background behind the person. It takes a few seconds.</span>
+                <button
+                  onClick={onCutout}
+                  disabled={cutting || !base}
+                  className="px-4 py-2 rounded-lg bg-navy text-white font-head font-semibold text-sm disabled:opacity-60"
+                >
+                  {cutting ? 'Cutting out…' : '✂ Cut out subject'}
+                </button>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                onClick={onSave}
+                disabled={saving || !base || needsCutout || Boolean(saved)}
+                className="px-4 py-2 rounded-lg bg-teal text-navy font-head font-semibold text-sm disabled:opacity-60"
+              >
+                {saved ? 'Saved ✓' : saving ? 'Saving…' : '＋ Save to bank'}
+              </button>
+              <button onClick={onDownload} disabled={!base || needsCutout} className="text-sm font-semibold text-teal-ink disabled:opacity-60">
+                Download
+              </button>
+              {saved && (
+                <>
+                  <Link to="/images" className="text-sm font-semibold text-teal-ink">View in Image Bank ↗</Link>
                   <button
-                    onClick={onSave}
-                    disabled={saving || saved}
-                    className="px-4 py-2 rounded-lg bg-teal text-navy font-head font-semibold text-sm disabled:opacity-60"
-                  >
-                    {saved ? 'Saved ✓' : saving ? 'Saving…' : '＋ Save to bank'}
-                  </button>
-                  {saved && <Link to="/images" className="text-sm font-semibold text-teal-ink">View in Image Bank ↗</Link>}
-                  <button onClick={onDownload} className="text-sm font-semibold text-teal-ink">Download</button>
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(result.url); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+                    onClick={() => { navigator.clipboard.writeText(saved.url); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
                     className="text-sm font-semibold text-teal-ink"
                   >
                     {copied ? 'Copied ✓' : 'Copy URL'}
                   </button>
-                  <a href={result.url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-teal-ink">Open ↗</a>
-                </div>
-              </div>
-            )}
+                  <a href={saved.url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-teal-ink">Open ↗</a>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -253,19 +381,35 @@ export function Spotlight() {
             {style !== 'standard' && (
               <label className="block">
                 <span className="block text-xs font-semibold text-navy mb-1">Wheel colour</span>
-                <select value={color} onChange={(e) => setColor(e.target.value as WheelColor)} className={inputCls}>
-                  {COLORS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
+                <div className="flex items-center gap-2">
+                  <select value={color} onChange={(e) => setColor(e.target.value as ColorChoice)} className={inputCls}>
+                    {COLORS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                  <span className="w-8 h-8 rounded-full border border-line shrink-0" style={{ background: COLOR_HEX[resolvedColor] }} aria-hidden="true" />
+                </div>
                 {style === 'cutout' && (
-                  <span className="block text-[11px] text-ink-soft mt-1">Cut-out removes the background behind the subject — best for people shots.</span>
+                  <span className="block text-[11px] text-ink-soft mt-1">Best for people shots — the person stays full colour over the brand panel.</span>
                 )}
               </label>
             )}
             <label className="block">
+              <span className="block text-xs font-semibold text-navy mb-1">Zoom</span>
+              <input
+                type="range" min={1} max={MAX_ZOOM} step={0.01} value={view.zoom}
+                onChange={(e) => setView((v) => ({ ...v, zoom: Number(e.target.value) }))}
+                className="w-full"
+              />
+              {style === 'cutout' && subject && (
+                <button onClick={() => setView(autoFrame(bbox, base!, ratio))} className="text-xs font-semibold text-teal-ink mt-1">
+                  Auto-frame the subject
+                </button>
+              )}
+            </label>
+            <label className="block">
               <span className="block text-xs font-semibold text-navy mb-1">
                 Eyebrow <span className="text-ink-soft font-normal">(optional)</span>
               </span>
-              <input value={eyebrow} onChange={(e) => setEyebrow(e.target.value.slice(0, 32))} placeholder="e.g. Fire Doors" className={inputCls} />
+              <input value={eyebrow} onChange={(e) => setEyebrow(e.target.value.slice(0, 32))} placeholder="e.g. New starter" className={inputCls} />
             </label>
             <label className="block">
               <span className="block text-xs font-semibold text-navy mb-1">
@@ -285,14 +429,6 @@ export function Spotlight() {
               </span>
               <input value={subhead} onChange={(e) => setSubhead(e.target.value.slice(0, 40))} placeholder="e.g. Fire Damper Operative" className={inputCls} />
             </label>
-
-            <button
-              onClick={onGenerate}
-              disabled={busy}
-              className="w-full mt-1 px-5 py-2.5 rounded-lg bg-teal text-navy font-head font-semibold disabled:opacity-60"
-            >
-              {busy ? 'Polishing…' : result ? '↻ Regenerate' : '✦ Generate'}
-            </button>
           </div>
         </div>
       )}

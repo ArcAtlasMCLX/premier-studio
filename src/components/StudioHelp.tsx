@@ -145,9 +145,9 @@ export function StudioHelp({ open, onClose }: { open: boolean; onClose: () => vo
             </Screen>
             <Steps>
               <Step n={1} title="Upload photos.">Open <UI>Image Bank</UI> and click <UI>＋ Upload images</UI> (PNG/JPEG, several at once).</Step>
-              <Step n={2} title="Spotlight one.">Click <UI>✦ Spotlight</UI> on an image, then choose a style — <UI>Colourings</UI> (grade + wheel arcs) or <UI>Cut-out</UI> (subject kept full-colour over a graded background).</Step>
-              <Step n={3} title="Set colour & ratio.">Pick the brand colour and the crop ratio (4:5, 1:1, 16:9).</Step>
-              <Step n={4} title="Save to bank.">Stores the finished image for reuse.</Step>
+              <Step n={2} title="Spotlight one.">Click <UI>✦ Spotlight</UI> on an image, then choose a style — <UI>Colourings</UI> (grade + wheel arcs) or <UI>Cut-out</UI> (subject kept full-colour over the brand panel). For Cut-out, click <UI>✂ Cut out subject</UI> once — it takes a few seconds.</Step>
+              <Step n={3} title="Set colour, ratio & position.">Pick the brand colour and the ratio (Wide, Landscape, Square, Portrait). The preview updates as you type; <b>drag the picture</b> to reposition it and use <UI>Zoom</UI> to tighten the crop.</Step>
+              <Step n={4} title="Save to bank.">Stores the finished image for reuse (or <UI>Download</UI> it straight away).</Step>
               <Step n={5} title="Find it later.">Uploads sit under <UI>Your images</UI>; finished versions under <UI>Spotlights</UI>.</Step>
               <Step n={6} title="Reuse it.">Use it as an Insight or case-study cover, or alongside a Signal post.</Step>
               <Step n={7} title="Tidy up.">Delete anything you no longer need from either list.</Step>

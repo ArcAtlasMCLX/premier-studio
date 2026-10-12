@@ -14,14 +14,6 @@ export interface ImageBankItem {
   created_at: string
 }
 
-// User-facing styles. 'colourings' = full value-colour grade + wheel arcs (whole image);
-// 'cutout' = the same but the subject is kept full-colour over the graded background.
-// Both map to the edge function's style:'wheeled' (± cutout).
-export type SpotStyle = 'standard' | 'colourings' | 'cutout'
-export type WheelColor = 'auto' | 'blue' | 'green' | 'orange' | 'yellow'
-
-export type Ratio = '16:9' | '1:1' | '4:5' | '1.91:1'
-
 const BUCKET = 'studio-images'
 // The compositor can't decode WebP/HEIC, so we guard uploads at the source.
 const ACCEPTED = ['image/png', 'image/jpeg']
@@ -91,21 +83,9 @@ export async function deleteImage(item: ImageBankItem): Promise<void> {
   if (error) throw error
 }
 
-export interface SpotlightOpts {
-  imageId: string
-  ratio: Ratio
-  headline?: string
-  eyebrow?: string
-  subhead?: string
-  style?: SpotStyle
-  color?: WheelColor
-}
-
 export interface SpotlightResult {
   url: string
   path: string | null
-  color: WheelColor | null
-  cutout: boolean
 }
 
 // supabase-js collapses every non-2xx from an edge function into the same opaque
@@ -128,41 +108,46 @@ async function friendlyFunctionError(error: unknown): Promise<string> {
   const code = status ? `Code: N2XX·${status}` : 'Code: N2XX'
   if (reason) return `${reason} (${code})`
   if (status === 546) {
-    return `That photo was too large or complex to process — try a smaller image, or hit Regenerate. (${code})`
+    return `That photo was too large or complex to process — try a smaller image. (${code})`
   }
   if (status === 504 || status === 408) return `The image service timed out — please try again. (${code})`
   if (status === 429) return `The image service is busy right now — wait a moment and try again. (${code})`
   if (status >= 500) return `The image service hit a problem — please try again. (${code})`
-  return `Couldn’t generate the image — please try again. (${code})`
+  return `Couldn’t cut out the subject — please try again. (${code})`
 }
 
-// Polish + brand + ratio an Image-Bank photo. Returns the public URL + storage path.
-export async function spotlight(opts: SpotlightOpts): Promise<SpotlightResult> {
+// The raw source photo, as bytes, from the private bucket. Spotlight draws it on a
+// canvas, and a Blob keeps the canvas untainted (a cross-origin <img> would block export).
+export async function downloadSource(path: string): Promise<Blob> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(path)
+  if (error || !data) throw new Error('Could not read the source image')
+  return data
+}
+
+// Ask the edge function for the background-removed subject only (Replicate, ~5–10 s).
+// Compositing then happens in the browser — see lib/spotlightCanvas.ts.
+export async function cutoutSubject(imageId: string): Promise<Blob> {
   const { data, error } = await supabase.functions.invoke('process-image', {
-    body: {
-      source: 'bank',
-      imageId: opts.imageId,
-      ratio: opts.ratio,
-      headline: opts.headline,
-      eyebrow: opts.eyebrow,
-      subhead: opts.subhead,
-      // Colourings + Cut-out both render as the edge function's 'wheeled' style;
-      // only Cut-out triggers background removal.
-      style: opts.style === 'standard' ? 'standard' : 'wheeled',
-      color: opts.color ?? 'auto',
-      cutout: opts.style === 'cutout',
-    },
+    body: { op: 'cutout', source: 'bank', imageId },
   })
   if (error) throw new Error(await friendlyFunctionError(error))
-  if (!data?.url) {
-    throw new Error(String(data?.error || 'Couldn’t generate the image — please try again.'))
+  if (!data?.subjectUrl) {
+    throw new Error(String(data?.error || 'Couldn’t cut out the subject — please try again.'))
   }
-  return {
-    url: data.url as string,
-    path: (data.path as string) ?? null,
-    color: (data.color as WheelColor) ?? null,
-    cutout: Boolean(data.cutout),
-  }
+  const res = await fetch(data.subjectUrl as string)
+  if (!res.ok) throw new Error('Could not fetch the cut-out subject')
+  return res.blob()
+}
+
+// Store a finished Spotlight PNG (rendered in the browser) in the public bucket.
+export async function uploadSpotlight(png: Blob): Promise<SpotlightResult> {
+  const path = `spotlights/spotlight-${Date.now()}.png`
+  const { error } = await supabase.storage
+    .from('studio-insights')
+    .upload(path, png, { contentType: 'image/png', upsert: false })
+  if (error) throw error
+  const { data } = supabase.storage.from('studio-insights').getPublicUrl(path)
+  return { url: data.publicUrl, path }
 }
 
 // Spotlight outputs live in the public studio-insights bucket. Derive the path from
