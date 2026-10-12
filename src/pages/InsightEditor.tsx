@@ -184,7 +184,8 @@ export function InsightEditor() {
         ai_cards: selectedCards,
       }
       const saved = recordId ? await updateInsight(recordId, payload) : await createInsight(payload)
-      if (publish) await publishInsight(saved.id)
+      // Keep the original publish date on republish; only stamp a first-time publish.
+      if (publish) await publishInsight(saved.id, Boolean(saved.published_at))
       setRecordId(saved.id)
       // A change to live (published) content should rebuild the public site.
       if (publish || payload.status === 'published') await triggerRebuild()

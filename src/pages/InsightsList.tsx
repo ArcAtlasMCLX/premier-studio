@@ -27,6 +27,21 @@ export function InsightsList() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [scheduling, setScheduling] = useState(false)
   const [schedMsg, setSchedMsg] = useState<string | null>(null)
+  const [rebuilding, setRebuilding] = useState(false)
+  const [rebuildMsg, setRebuildMsg] = useState<string | null>(null)
+
+  // Rebuild the public site without having to republish an article (republishing is
+  // what used to restamp publish dates). Non-fatal: triggerRebuild swallows errors.
+  async function onRebuild() {
+    setRebuilding(true)
+    setRebuildMsg(null)
+    try {
+      await triggerRebuild()
+      setRebuildMsg('Site rebuilding — live in about a minute.')
+    } finally {
+      setRebuilding(false)
+    }
+  }
 
   function toggleSel(id: string) {
     setSelected((s) => {
@@ -120,11 +135,23 @@ export function InsightsList() {
     <div className="max-w-5xl mx-auto px-8 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-head text-2xl font-bold text-navy">Insights</h1>
-        <Link to="/insights/new" className="px-4 py-2 rounded-lg bg-teal text-navy font-head font-semibold text-sm">
-          New insight
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onRebuild}
+            disabled={rebuilding}
+            title="Refresh the live site now, without republishing an article"
+            className="px-4 py-2 rounded-lg border border-line text-navy font-head font-semibold text-sm disabled:opacity-60"
+          >
+            {rebuilding ? 'Rebuilding…' : 'Rebuild site'}
+          </button>
+          <Link to="/insights/new" className="px-4 py-2 rounded-lg bg-teal text-navy font-head font-semibold text-sm">
+            New insight
+          </Link>
+        </div>
       </div>
 
+      {rebuildMsg && <p className="text-teal-ink text-sm mb-4">{rebuildMsg}</p>}
       {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
 
       {selected.size > 0 && (
