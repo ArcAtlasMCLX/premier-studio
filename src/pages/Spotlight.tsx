@@ -117,7 +117,7 @@ export function Spotlight() {
   const active = useMemo(() => items.find((i) => i.id === imageId) ?? null, [items, imageId])
 
   // Load the source photo as bytes (keeps the canvas exportable). Switching source
-  // drops the cut-out and the saved result but keeps the text controls (often reused).
+  // drops the cut-out, the saved result and the text, so a new photo starts clean.
   // Keyed on the image's id/path, NOT the row object: refreshing the bank list after a
   // save produces a new object for the same image, and that must not reset the workshop.
   const activeId = active?.id ?? null
@@ -129,6 +129,9 @@ export function Spotlight() {
     setSaved(null)
     setError(null)
     setView(DEFAULT_VIEW)
+    setEyebrow('')
+    setHeadline('')
+    setSubhead('')
     if (!activePath) return
     let cancelled = false
     downloadSource(activePath)
