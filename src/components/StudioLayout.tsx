@@ -14,6 +14,7 @@ export function StudioLayout({ children }: { children: ReactNode }) {
   const onSpotlight = pathname.startsWith('/spotlight')
   const onCases = pathname.startsWith('/case-studies')
   const onAnalytics = pathname.startsWith('/analytics')
+  const onAutoInsights = pathname.startsWith('/auto-insights')
 
   return (
     <div className="min-h-screen flex">
@@ -80,6 +81,14 @@ export function StudioLayout({ children }: { children: ReactNode }) {
             }`}
           >
             Analytics
+          </Link>
+          <Link
+            to="/auto-insights"
+            className={`block px-3 py-2 rounded-lg font-medium ${
+              onAutoInsights ? 'bg-white/10 text-white' : 'text-white/75 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Auto-insights
           </Link>
           <button
             onClick={() => setHelpOpen(true)}
