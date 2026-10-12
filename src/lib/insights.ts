@@ -59,8 +59,16 @@ export async function updateInsight(id: string, patch: Partial<InsightDraft>): P
   return data as Insight
 }
 
-export async function publishInsight(id: string): Promise<Insight> {
-  return updateInsight(id, { status: 'published', published_at: new Date().toISOString() })
+// Flip an insight to published. Only stamp published_at the FIRST time it is
+// published — i.e. when it has no date yet. Republishing a live article (to fix a
+// cover, a typo, a tag) must keep its original publish date, so when it already has
+// one we send the status only. The studio.insights_set_published_at trigger fills a
+// missing date as a backstop, so a brand-new publish still gets today's date even if
+// the caller ever forgets to pass hasPublishDate.
+export async function publishInsight(id: string, hasPublishDate: boolean): Promise<Insight> {
+  const patch: Partial<InsightDraft> = { status: 'published' }
+  if (!hasPublishDate) patch.published_at = new Date().toISOString()
+  return updateInsight(id, patch)
 }
 
 export async function deleteInsight(id: string): Promise<void> {
