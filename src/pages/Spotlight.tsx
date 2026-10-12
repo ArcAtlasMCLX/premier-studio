@@ -118,6 +118,10 @@ export function Spotlight() {
 
   // Load the source photo as bytes (keeps the canvas exportable). Switching source
   // drops the cut-out and the saved result but keeps the text controls (often reused).
+  // Keyed on the image's id/path, NOT the row object: refreshing the bank list after a
+  // save produces a new object for the same image, and that must not reset the workshop.
+  const activeId = active?.id ?? null
+  const activePath = active?.storage_path ?? null
   useEffect(() => {
     setBase(null)
     setSubject(null)
@@ -125,9 +129,9 @@ export function Spotlight() {
     setSaved(null)
     setError(null)
     setView(DEFAULT_VIEW)
-    if (!active) return
+    if (!activePath) return
     let cancelled = false
-    downloadSource(active.storage_path)
+    downloadSource(activePath)
       .then(loadImage)
       .then((img) => {
         if (cancelled) return
@@ -138,7 +142,8 @@ export function Spotlight() {
     return () => {
       cancelled = true
     }
-  }, [active])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, activePath])
 
   const resolvedColor: Color = color === 'auto' ? autoColor : color
 
