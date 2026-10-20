@@ -28,6 +28,7 @@ import {
   TEXT_SWATCHES,
   type Color,
   type MarkPos,
+  type MarkStyle,
   type Ratio,
   type SpotStyle,
   type TextColors,
@@ -59,13 +60,19 @@ const SIDES: { value: WheelSide; label: string }[] = [
   { value: 'top', label: 'Top · orange' },
   { value: 'left', label: 'Left · green' },
 ]
+// 3×2 grid, laid out as it sits on the picture.
 const MARK_POS: { value: MarkPos; label: string }[] = [
-  { value: 'bottom-right', label: 'Bottom right' },
-  { value: 'bottom-centre', label: 'Bottom centre' },
-  { value: 'bottom-left', label: 'Bottom left' },
-  { value: 'top-right', label: 'Top right' },
-  { value: 'top-centre', label: 'Top centre' },
   { value: 'top-left', label: 'Top left' },
+  { value: 'top-centre', label: 'Top centre' },
+  { value: 'top-right', label: 'Top right' },
+  { value: 'bottom-left', label: 'Bottom left' },
+  { value: 'bottom-centre', label: 'Bottom centre' },
+  { value: 'bottom-right', label: 'Bottom right' },
+]
+const MARK_STYLES: { value: MarkStyle; label: string }[] = [
+  { value: 'navy', label: 'Navy pill' },
+  { value: 'white', label: 'White pill' },
+  { value: 'none', label: 'Text only' },
 ]
 const HEADLINE_MAX = 80
 const inputCls =
@@ -134,6 +141,7 @@ export function Spotlight() {
   const [color, setColor] = useState<ColorChoice>('auto')
   const [wheelSide, setWheelSide] = useState<WheelSide>('right')
   const [markPos, setMarkPos] = useState<MarkPos>('bottom-right')
+  const [markStyle, setMarkStyle] = useState<MarkStyle>('navy')
   const [textColors, setTextColors] = useState<TextColors>(DEFAULT_TEXT_COLORS)
   const [eyebrow, setEyebrow] = useState('')
   const [headline, setHeadline] = useState('')
@@ -223,7 +231,7 @@ export function Spotlight() {
   // Any change to the composition invalidates a previous save.
   useEffect(() => {
     setSaved(null)
-  }, [ratio, style, resolvedColor, wheelSide, markPos, textColors, eyebrow, headline, subhead, view, subject])
+  }, [ratio, style, resolvedColor, wheelSide, markPos, markStyle, textColors, eyebrow, headline, subhead, view, subject])
 
   // Re-frame when the ratio changes: zoom on the subject for Cut-out, else plain cover.
   useEffect(() => {
@@ -242,10 +250,10 @@ export function Spotlight() {
     if (!g) return
     renderSpotlight(g, {
       base, subject: style === 'cutout' ? subject : null, logo,
-      ratio, style, color: resolvedColor, wheelSide, markPos, textColors,
+      ratio, style, color: resolvedColor, wheelSide, markPos, markStyle, textColors,
       eyebrow, headline, subhead, view,
     })
-  }, [base, subject, logo, ratio, style, resolvedColor, wheelSide, markPos, textColors, eyebrow, headline, subhead, view, fontsReady])
+  }, [base, subject, logo, ratio, style, resolvedColor, wheelSide, markPos, markStyle, textColors, eyebrow, headline, subhead, view, fontsReady])
 
   useEffect(() => {
     const id = requestAnimationFrame(draw)
@@ -288,7 +296,7 @@ export function Spotlight() {
     if (!base) throw new Error('Photo still loading')
     return {
       base, subject: style === 'cutout' ? subject : null, logo,
-      ratio, style, color: resolvedColor, wheelSide, markPos, textColors,
+      ratio, style, color: resolvedColor, wheelSide, markPos, markStyle, textColors,
       eyebrow, headline, subhead, view,
     }
   }
@@ -480,14 +488,46 @@ export function Spotlight() {
                 </div>
               </label>
             )}
-            {style !== 'standard' && (
-              <label className="block">
-                <span className="block text-xs font-semibold text-navy mb-1">Premier Compliance mark</span>
-                <select value={markPos} onChange={(e) => setMarkPos(e.target.value as MarkPos)} className={inputCls}>
-                  {MARK_POS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
-              </label>
-            )}
+            <div className="rounded-lg border border-line bg-white p-3">
+              <span className="block text-xs font-semibold text-navy mb-2">
+                Premier Compliance mark <span className="text-ink-soft font-normal">· position</span>
+              </span>
+              <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Mark position">
+                {MARK_POS.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={markPos === m.value}
+                    onClick={() => setMarkPos(m.value)}
+                    className={`h-9 rounded-md border text-[11px] font-semibold ${markPos === m.value ? 'border-navy bg-navy text-white' : 'border-line text-ink-soft hover:border-teal'}`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              {style !== 'standard' && (
+                <>
+                  <span className="block text-xs font-semibold text-navy mt-3 mb-1.5">
+                    Mark style
+                  </span>
+                  <div className="flex gap-1.5" role="radiogroup" aria-label="Mark style">
+                    {MARK_STYLES.map((m) => (
+                      <button
+                        key={m.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={markStyle === m.value}
+                        onClick={() => setMarkStyle(m.value)}
+                        className={`flex-1 h-8 rounded-md border text-[11px] font-semibold ${markStyle === m.value ? 'border-navy bg-navy text-white' : 'border-line text-ink-soft hover:border-teal'}`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <label className="block">
               <span className="block text-xs font-semibold text-navy mb-1">Zoom</span>
               <input

@@ -21,6 +21,9 @@ export type SpotStyle = 'standard' | 'colourings' | 'cutout'
 export type Color = 'blue' | 'green' | 'orange'
 export type WheelSide = 'right' | 'top' | 'left'
 export type MarkPos = 'bottom-right' | 'bottom-centre' | 'bottom-left' | 'top-right' | 'top-centre' | 'top-left'
+// Pill treatment for the wordmark: navy pill + white text (the "negative" logo), white
+// pill + navy text (the "positive" logo), or no pill at all.
+export type MarkStyle = 'navy' | 'white' | 'none'
 
 export const DIMS: Record<Ratio, { w: number; h: number }> = {
   '16:9': { w: 1600, h: 900 },
@@ -30,7 +33,6 @@ export const DIMS: Record<Ratio, { w: number; h: number }> = {
 }
 
 const NAVY = '#030D3A'
-const TEAL = '#00C896'
 
 // Wheel segment colours: the flat value colour plus the deeper/lighter end of the
 // brand wheel's gradient (Brand Guidelines v1.0 p.7/p.9, yellow replaced per V3.1).
@@ -87,6 +89,7 @@ export interface RenderInput {
   color: Color
   wheelSide: WheelSide
   markPos: MarkPos
+  markStyle: MarkStyle
   eyebrow?: string
   headline?: string
   subhead?: string
@@ -266,17 +269,43 @@ export function renderSpotlight(g: Ctx, input: RenderInput): void {
     }
   }
 
-  // Branding mark. Wheeled = "Premier Compliance" wordmark (teal "o") in a navy pill
-  // box, placed per markPos; standard = the wheel logo top-left.
+  // Branding mark. Wheeled = the "Premier Compliance" wordmark (the "o" drawn as the
+  // brand ring) in a pill, placed per markPos; standard = the wheel logo, same positions.
   if (wheeled) {
-    drawWordmarkPill(g, W, H, pad, input.markPos)
+    drawWordmarkPill(g, W, H, pad, input.markPos, input.markStyle)
   } else if (input.logo) {
     const logoW = Math.round(W * 0.072)
-    g.drawImage(input.logo, pad, pad, logoW, logoW)
+    const { x, y } = placeMark(W, H, pad, logoW, logoW, input.markPos)
+    g.drawImage(input.logo, x, y, logoW, logoW)
   }
 }
 
-function drawWordmarkPill(g: Ctx, W: number, H: number, pad: number, pos: MarkPos) {
+function placeMark(W: number, H: number, pad: number, w: number, h: number, pos: MarkPos) {
+  const [v, hz] = pos.split('-') as ['top' | 'bottom', 'left' | 'centre' | 'right']
+  const x = hz === 'left' ? pad : hz === 'right' ? W - pad - w : (W - w) / 2
+  const y = v === 'top' ? pad : H - pad - h
+  return { x, y }
+}
+
+// The brand symbol: a ring in three segments — orange across the top, blue down the
+// right, green up the left (Brand Guidelines v1.0 p.7). Used as the "o" in the wordmark.
+function drawRing(g: Ctx, cx: number, cy: number, r: number, stroke: number) {
+  const seg: [number, number, string][] = [
+    [-150, -30, COLOR_HEX.orange],
+    [-30, 90, COLOR_HEX.blue],
+    [90, 210, COLOR_HEX.green],
+  ]
+  g.lineWidth = stroke
+  g.lineCap = 'butt'
+  for (const [a0, a1, col] of seg) {
+    g.strokeStyle = col
+    g.beginPath()
+    g.arc(cx, cy, r, (a0 * Math.PI) / 180, (a1 * Math.PI) / 180)
+    g.stroke()
+  }
+}
+
+function drawWordmarkPill(g: Ctx, W: number, H: number, pad: number, pos: MarkPos, style: MarkStyle) {
   const wm = Math.round(W * 0.026)
   g.font = font(700, wm)
   setSpacing(g, 0.3)
@@ -285,16 +314,22 @@ function drawWordmarkPill(g: Ctx, W: number, H: number, pad: number, pos: MarkPo
   const textW = wa + wo + wc
   const px = Math.round(wm * 0.9), py = Math.round(wm * 0.55)
   const pillW = textW + px * 2, pillH = wm + py * 2
-  const [v, h] = pos.split('-') as ['top' | 'bottom', 'left' | 'centre' | 'right']
-  const x = h === 'left' ? pad : h === 'right' ? W - pad - pillW : (W - pillW) / 2
-  const y = v === 'top' ? pad : H - pad - pillH
-  g.fillStyle = hexA(NAVY, 0.82)
-  g.beginPath(); g.roundRect(x, y, pillW, pillH, pillH / 2); g.fill()
+  const { x, y } = placeMark(W, H, pad, pillW, pillH, pos)
+  if (style !== 'none') {
+    g.fillStyle = style === 'navy' ? hexA(NAVY, 0.84) : 'rgba(255,255,255,0.92)'
+    g.beginPath(); g.roundRect(x, y, pillW, pillH, pillH / 2); g.fill()
+  }
+  const ink = style === 'white' ? NAVY : '#FFFFFF'
   const baseline = y + py + wm * 0.78
   g.textAlign = 'left'
-  g.fillStyle = '#FFFFFF'; g.fillText(a, x + px, baseline)
-  g.fillStyle = TEAL; g.fillText(o, x + px + wa, baseline)
-  g.fillStyle = '#FFFFFF'; g.fillText(c, x + px + wa + wo, baseline)
+  if (style === 'none') { g.shadowColor = 'rgba(3,13,58,0.6)'; g.shadowBlur = wm * 0.4 }
+  g.fillStyle = ink
+  g.fillText(a, x + px, baseline)
+  g.fillText(c, x + px + wa + wo, baseline)
+  g.shadowBlur = 0
+  // The "o" is the ring: sized to the letter's x-height, centred on its advance.
+  const xh = wm * 0.53
+  drawRing(g, x + px + wa + wo / 2, baseline - xh / 2, xh / 2 - wm * 0.045, wm * 0.11)
   setSpacing(g, 0)
 }
 
