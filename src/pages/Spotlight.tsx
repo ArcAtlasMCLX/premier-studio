@@ -14,18 +14,25 @@ import {
   alphaBbox,
   autoFrame,
   COLOR_HEX,
+  DEFAULT_TEXT_COLORS,
   DEFAULT_VIEW,
   DIMS,
   ensureFonts,
   exportPng,
   loadImage,
   MAX_ZOOM,
+  OPPOSITE,
   pickColor,
   renderSpotlight,
+  SIDE_COLOR,
+  TEXT_SWATCHES,
   type Color,
+  type MarkPos,
   type Ratio,
   type SpotStyle,
+  type TextColors,
   type View,
+  type WheelSide,
 } from '../lib/spotlightCanvas'
 
 type ColorChoice = 'auto' | Color
@@ -42,14 +49,71 @@ const STYLES: { value: SpotStyle; label: string }[] = [
   { value: 'cutout', label: 'Cut-out · subject kept, background graded' },
 ]
 const COLORS: { value: ColorChoice; label: string }[] = [
-  { value: 'auto', label: 'Auto · best fit for the photo' },
+  { value: 'auto', label: 'Auto' },
   { value: 'blue', label: 'Blue (Dependable)' },
   { value: 'green', label: 'Green (Expert)' },
   { value: 'orange', label: 'Orange (Dynamic)' },
 ]
+const SIDES: { value: WheelSide; label: string }[] = [
+  { value: 'right', label: 'Right · blue' },
+  { value: 'top', label: 'Top · orange' },
+  { value: 'left', label: 'Left · green' },
+]
+const MARK_POS: { value: MarkPos; label: string }[] = [
+  { value: 'bottom-right', label: 'Bottom right' },
+  { value: 'bottom-centre', label: 'Bottom centre' },
+  { value: 'bottom-left', label: 'Bottom left' },
+  { value: 'top-right', label: 'Top right' },
+  { value: 'top-centre', label: 'Top centre' },
+  { value: 'top-left', label: 'Top left' },
+]
 const HEADLINE_MAX = 80
 const inputCls =
   'w-full px-3 py-2 rounded-lg border border-line focus:outline-none focus:ring-2 focus:ring-teal/40'
+
+// Colour control for a text element: the brand palette as swatches (hex in the
+// tooltip), a free colour picker for anything else, and an optional "Auto".
+function ColourField({
+  value, onChange, auto, autoHint,
+}: { value: string; onChange: (hex: string) => void; auto?: boolean; autoHint?: string }) {
+  const isHex = /^#[0-9a-f]{6}$/i.test(value)
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+      {auto && (
+        <button
+          type="button"
+          onClick={() => onChange('auto')}
+          title={autoHint}
+          className={`h-6 px-2 rounded-full border text-[11px] font-semibold ${value === 'auto' ? 'border-navy bg-navy text-white' : 'border-line text-ink-soft'}`}
+        >
+          Auto
+        </button>
+      )}
+      {TEXT_SWATCHES.map((s) => (
+        <button
+          key={s.hex}
+          type="button"
+          onClick={() => onChange(s.hex)}
+          title={`${s.name} ${s.hex}`}
+          aria-label={`${s.name} ${s.hex}`}
+          className={`w-6 h-6 rounded-full border-2 ${value.toUpperCase() === s.hex ? 'border-navy' : 'border-line'}`}
+          style={{ background: s.hex }}
+        />
+      ))}
+      <label className="relative w-6 h-6 rounded-full border-2 border-dashed border-ink-soft overflow-hidden cursor-pointer" title="Pick any colour">
+        <input
+          type="color"
+          value={isHex ? value : '#FFFFFF'}
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          className="absolute -inset-2 w-10 h-10 cursor-pointer opacity-0"
+          aria-label="Pick any colour"
+        />
+        <span aria-hidden="true" className="absolute inset-0 rounded-full" style={{ background: 'conic-gradient(#FF7D00,#FFED1C,#03FFA1,#248CFF,#003CA0,#FF7D00)' }} />
+      </label>
+      {isHex && <span className="text-[11px] text-ink-soft font-mono">{value.toUpperCase()}</span>}
+    </div>
+  )
+}
 
 // Spotlight — the brand-image workshop. Tier 2 of the two-tier model: the Image Bank
 // holds the raw upload; here it's framed, brand-treated and exported. The picture is
@@ -68,6 +132,9 @@ export function Spotlight() {
   const [ratio, setRatio] = useState<Ratio>('1.91:1')
   const [style, setStyle] = useState<SpotStyle>('standard')
   const [color, setColor] = useState<ColorChoice>('auto')
+  const [wheelSide, setWheelSide] = useState<WheelSide>('right')
+  const [markPos, setMarkPos] = useState<MarkPos>('bottom-right')
+  const [textColors, setTextColors] = useState<TextColors>(DEFAULT_TEXT_COLORS)
   const [eyebrow, setEyebrow] = useState('')
   const [headline, setHeadline] = useState('')
   const [subhead, setSubhead] = useState('')
@@ -148,17 +215,20 @@ export function Spotlight() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, activePath])
 
-  const resolvedColor: Color = color === 'auto' ? autoColor : color
+  // Cut-out: the wheel colour follows its position (right = blue, top = orange,
+  // left = green) unless overridden. Colourings: Auto = best fit for the photo.
+  const resolvedColor: Color =
+    color !== 'auto' ? color : style === 'cutout' ? SIDE_COLOR[wheelSide] : autoColor
 
   // Any change to the composition invalidates a previous save.
   useEffect(() => {
     setSaved(null)
-  }, [ratio, style, resolvedColor, eyebrow, headline, subhead, view, subject])
+  }, [ratio, style, resolvedColor, wheelSide, markPos, textColors, eyebrow, headline, subhead, view, subject])
 
   // Re-frame when the ratio changes: zoom on the subject for Cut-out, else plain cover.
   useEffect(() => {
-    setView(style === 'cutout' && bbox && base ? autoFrame(bbox, base, ratio) : DEFAULT_VIEW)
-  }, [ratio, style, bbox, base])
+    setView(style === 'cutout' && bbox && base ? autoFrame(bbox, base, ratio, wheelSide) : DEFAULT_VIEW)
+  }, [ratio, style, bbox, base, wheelSide])
 
   const draw = useCallback(() => {
     const c = canvasRef.current
@@ -172,9 +242,10 @@ export function Spotlight() {
     if (!g) return
     renderSpotlight(g, {
       base, subject: style === 'cutout' ? subject : null, logo,
-      ratio, style, color: resolvedColor, eyebrow, headline, subhead, view,
+      ratio, style, color: resolvedColor, wheelSide, markPos, textColors,
+      eyebrow, headline, subhead, view,
     })
-  }, [base, subject, logo, ratio, style, resolvedColor, eyebrow, headline, subhead, view, fontsReady])
+  }, [base, subject, logo, ratio, style, resolvedColor, wheelSide, markPos, textColors, eyebrow, headline, subhead, view, fontsReady])
 
   useEffect(() => {
     const id = requestAnimationFrame(draw)
@@ -205,7 +276,7 @@ export function Spotlight() {
       const bb = alphaBbox(img)
       setSubject(img)
       setBbox(bb)
-      setView(autoFrame(bb, base, ratio))
+      setView(autoFrame(bb, base, ratio, wheelSide))
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -217,7 +288,8 @@ export function Spotlight() {
     if (!base) throw new Error('Photo still loading')
     return {
       base, subject: style === 'cutout' ? subject : null, logo,
-      ratio, style, color: resolvedColor, eyebrow, headline, subhead, view,
+      ratio, style, color: resolvedColor, wheelSide, markPos, textColors,
+      eyebrow, headline, subhead, view,
     }
   }
 
@@ -386,18 +458,34 @@ export function Spotlight() {
                 {STYLES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </label>
+            {style === 'cutout' && (
+              <label className="block">
+                <span className="block text-xs font-semibold text-navy mb-1">Wheel position</span>
+                <select value={wheelSide} onChange={(e) => setWheelSide(e.target.value as WheelSide)} className={inputCls}>
+                  {SIDES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+                <span className="block text-[11px] text-ink-soft mt-1">The colour follows the wheel: right is blue, top is orange, left is green.</span>
+              </label>
+            )}
             {style !== 'standard' && (
               <label className="block">
-                <span className="block text-xs font-semibold text-navy mb-1">Wheel colour</span>
+                <span className="block text-xs font-semibold text-navy mb-1">
+                  Wheel colour {style === 'cutout' && <span className="text-ink-soft font-normal">(Auto = by position)</span>}
+                </span>
                 <div className="flex items-center gap-2">
                   <select value={color} onChange={(e) => setColor(e.target.value as ColorChoice)} className={inputCls}>
                     {COLORS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                   <span className="w-8 h-8 rounded-full border border-line shrink-0" style={{ background: COLOR_HEX[resolvedColor] }} aria-hidden="true" />
                 </div>
-                {style === 'cutout' && (
-                  <span className="block text-[11px] text-ink-soft mt-1">Best for people shots — the person stays full colour over the brand panel.</span>
-                )}
+              </label>
+            )}
+            {style !== 'standard' && (
+              <label className="block">
+                <span className="block text-xs font-semibold text-navy mb-1">Premier Compliance mark</span>
+                <select value={markPos} onChange={(e) => setMarkPos(e.target.value as MarkPos)} className={inputCls}>
+                  {MARK_POS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
               </label>
             )}
             <label className="block">
@@ -408,7 +496,7 @@ export function Spotlight() {
                 className="w-full"
               />
               {style === 'cutout' && subject && (
-                <button onClick={() => setView(autoFrame(bbox, base!, ratio))} className="text-xs font-semibold text-teal-ink mt-1">
+                <button onClick={() => setView(autoFrame(bbox, base!, ratio, wheelSide))} className="text-xs font-semibold text-teal-ink mt-1">
                   Auto-frame the subject
                 </button>
               )}
@@ -418,6 +506,12 @@ export function Spotlight() {
                 Eyebrow <span className="text-ink-soft font-normal">(optional)</span>
               </span>
               <input value={eyebrow} onChange={(e) => setEyebrow(e.target.value.slice(0, 32))} placeholder="e.g. New starter" className={inputCls} />
+              <ColourField
+                value={textColors.eyebrow}
+                onChange={(hex) => setTextColors((t) => ({ ...t, eyebrow: hex }))}
+                auto
+                autoHint={`Opposite of the wheel colour (${OPPOSITE[resolvedColor]})`}
+              />
             </label>
             <label className="block">
               <span className="block text-xs font-semibold text-navy mb-1">
@@ -430,12 +524,14 @@ export function Spotlight() {
                 placeholder="Optional text overlay"
                 className={inputCls}
               />
+              <ColourField value={textColors.headline} onChange={(hex) => setTextColors((t) => ({ ...t, headline: hex }))} />
             </label>
             <label className="block">
               <span className="block text-xs font-semibold text-navy mb-1">
-                Role / subtitle <span className="text-ink-soft font-normal">(optional — shows in green under the headline)</span>
+                Role / subtitle <span className="text-ink-soft font-normal">(optional — under the headline)</span>
               </span>
               <input value={subhead} onChange={(e) => setSubhead(e.target.value.slice(0, 40))} placeholder="e.g. Fire Damper Operative" className={inputCls} />
+              <ColourField value={textColors.subhead} onChange={(hex) => setTextColors((t) => ({ ...t, subhead: hex }))} />
             </label>
           </div>
         </div>

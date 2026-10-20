@@ -6,10 +6,21 @@
 // laptop, and the author gets a live preview with drag-to-reposition for free.
 // The shared edge compositor (_shared/compositor.ts) still renders covers and
 // Signals; this module mirrors its geometry so all three families look the same.
+//
+// Layout rules agreed with Zach & Jacob on 20 Oct 2026:
+//   - the wheel colour follows where the wheel sits: right = blue, top = orange,
+//     left = green, each with the brand gradient inside the segment;
+//   - the wheel panel is ~15% slimmer than the first cut;
+//   - the eyebrow has a short line either side (a hyphen, not an underscore), in
+//     the "opposite" of the wheel colour by default;
+//   - the "Premier Compliance" wordmark sits in a pill box so it reads on any
+//     background, and can be placed at the top or bottom, left/centre/right.
 
 export type Ratio = '16:9' | '1:1' | '4:5' | '1.91:1'
 export type SpotStyle = 'standard' | 'colourings' | 'cutout'
 export type Color = 'blue' | 'green' | 'orange'
+export type WheelSide = 'right' | 'top' | 'left'
+export type MarkPos = 'bottom-right' | 'bottom-centre' | 'bottom-left' | 'top-right' | 'top-centre' | 'top-left'
 
 export const DIMS: Record<Ratio, { w: number; h: number }> = {
   '16:9': { w: 1600, h: 900 },
@@ -20,11 +31,42 @@ export const DIMS: Record<Ratio, { w: number; h: number }> = {
 
 const NAVY = '#030D3A'
 const TEAL = '#00C896'
-// Mirrors the compositor's value colours (the solid wheel panel uses the deeper
-// green rather than the #03FFA1 accent, which reads garish as a large flat surface).
-export const COLOR_HEX: Record<Color, string> = { blue: '#248CFF', green: '#2EA84F', orange: '#FF7D00' }
-const ORANGE = COLOR_HEX.orange
-const GREEN = COLOR_HEX.green
+
+// Wheel segment colours: the flat value colour plus the deeper/lighter end of the
+// brand wheel's gradient (Brand Guidelines v1.0 p.7/p.9, yellow replaced per V3.1).
+export const COLOR_HEX: Record<Color, string> = { blue: '#248CFF', green: '#03FFA1', orange: '#FF7D00' }
+const COLOR_GRADE: Record<Color, [string, string]> = {
+  blue: ['#248CFF', '#003CA0'],
+  green: ['#03FFA1', '#2EA84F'],
+  orange: ['#FF7D00', '#FFB400'],
+}
+
+// Where the wheel sits decides its colour (Zach: "if it was across the top it'd be
+// orange, where it is now it'd be blue, on the left it'd be the green").
+export const SIDE_COLOR: Record<WheelSide, Color> = { right: 'blue', top: 'orange', left: 'green' }
+// Default eyebrow-line colour: the "opposite" of the wheel (Jacob, 20 Oct).
+export const OPPOSITE: Record<Color, string> = { blue: '#FF7D00', orange: '#248CFF', green: '#FF7D00' }
+
+// Brand palette offered as text-colour swatches (Brand Guidelines p.9 + white).
+export const TEXT_SWATCHES: { hex: string; name: string }[] = [
+  { hex: '#FFFFFF', name: 'White' },
+  { hex: '#030D3A', name: 'PC Dark Blue' },
+  { hex: '#00C896', name: 'Teal' },
+  { hex: '#248CFF', name: 'PC Light Blue' },
+  { hex: '#003CA0', name: 'PC Mid Blue' },
+  { hex: '#03FFA1', name: 'PC Dark Green' },
+  { hex: '#BFFFE5', name: 'PC Light Green' },
+  { hex: '#FF7D00', name: 'PC Orange' },
+  { hex: '#FFED1C', name: 'PC Yellow' },
+]
+
+export interface TextColors {
+  eyebrow: string // hex, or 'auto' = opposite of the wheel colour
+  headline: string
+  subhead: string
+}
+export const DEFAULT_TEXT_COLORS: TextColors = { eyebrow: 'auto', headline: '#FFFFFF', subhead: '#03FFA1' }
+
 const STANDARD_WASH = 0.34 // compositor VARIANT.spotlight.wash
 
 // Zoom + pan on top of a cover-fit of the photo. pan is in output-canvas pixels.
@@ -43,9 +85,12 @@ export interface RenderInput {
   ratio: Ratio
   style: SpotStyle
   color: Color
+  wheelSide: WheelSide
+  markPos: MarkPos
   eyebrow?: string
   headline?: string
   subhead?: string
+  textColors: TextColors
   view: View
 }
 
@@ -97,6 +142,30 @@ function wrap(g: Ctx, text: string, maxW: number, maxLines: number): string[] {
   return lines
 }
 
+// The wheel: a large circle the photo shows through, brand colour outside it. The
+// circle is placed off one edge so the colour forms a band on that side. Right/left
+// use cx = ∓0.101W (was 0.148 — the 15% slimmer panel Jacob asked for).
+function wheelCircle(side: WheelSide, W: number, H: number) {
+  if (side === 'right') return { cx: -W * 0.101, cy: H * 0.459, r: W * 0.833 }
+  if (side === 'left') return { cx: W * 1.101, cy: H * 0.459, r: W * 0.833 }
+  // Top: a wide circle just below the top band, so the colour is ~28% of the height
+  // at the centre and curves down a little at the corners.
+  const r = W * 1.2
+  return { cx: W * 0.5, cy: H * 0.28 + r, r }
+}
+
+// Gradient that runs along the band so the segment reads like the brand wheel.
+function wheelGradient(g: Ctx, side: WheelSide, color: Color, W: number, H: number) {
+  const [a, b] = COLOR_GRADE[color]
+  const grad =
+    side === 'top' ? g.createLinearGradient(0, 0, W, 0)
+    : side === 'right' ? g.createLinearGradient(W, 0, W, H)
+    : g.createLinearGradient(0, H, 0, 0)
+  grad.addColorStop(0, a)
+  grad.addColorStop(1, b)
+  return grad
+}
+
 export function renderSpotlight(g: Ctx, input: RenderInput): void {
   const { w: W, h: H } = DIMS[input.ratio]
   const wheel = COLOR_HEX[input.color]
@@ -107,14 +176,14 @@ export function renderSpotlight(g: Ctx, input: RenderInput): void {
   g.drawImage(input.base, rect.dx, rect.dy, rect.dw, rect.dh)
 
   if (input.style === 'cutout') {
-    // The photo sits INSIDE the wheel: solid brand colour everywhere except a large
+    // The photo sits INSIDE the wheel: brand colour everywhere except a large
     // circle (even-odd hole), then the full-colour subject on top, popping out of it.
-    const cx = -W * 0.148, cy = H * 0.459, r = W * 0.833
+    const { cx, cy, r } = wheelCircle(input.wheelSide, W, H)
     g.beginPath()
     g.rect(0, 0, W, H)
     g.moveTo(cx + r, cy)
     g.arc(cx, cy, r, 0, Math.PI * 2, true)
-    g.fillStyle = wheel
+    g.fillStyle = wheelGradient(g, input.wheelSide, input.color, W, H)
     g.fill('evenodd')
     if (input.subject) g.drawImage(input.subject, rect.dx, rect.dy, rect.dw, rect.dh)
   } else if (input.style === 'colourings') {
@@ -153,6 +222,7 @@ export function renderSpotlight(g: Ctx, input: RenderInput): void {
   const eyebrow = input.eyebrow?.trim() ?? ''
   const headline = input.headline?.trim() ?? ''
   const subhead = input.subhead?.trim() ?? ''
+  const eyebrowColor = input.textColors.eyebrow === 'auto' ? OPPOSITE[input.color] : input.textColors.eyebrow
   g.textBaseline = 'alphabetic'
   g.textAlign = 'left'
 
@@ -169,46 +239,63 @@ export function renderSpotlight(g: Ctx, input: RenderInput): void {
     const eyeBase = headFirst - headSize - Math.round(eyeSize * 0.7)
 
     if (eyebrow) {
-      g.fillStyle = TEAL
-      g.beginPath()
-      g.roundRect(pad, eyeBase - Math.round(eyeSize * 0.3), Math.round(W * 0.035), 4, 2)
-      g.fill()
+      // "— EYEBROW —": a hyphen-height line either side, in the eyebrow colour.
       g.font = font(800, eyeSize, wheeled)
-      g.fillStyle = wheeled ? ORANGE : TEAL
       setSpacing(g, eyeSize * 0.14)
-      g.fillText(eyebrow.toUpperCase(), pad + Math.round(W * 0.035) + 14, eyeBase)
+      const text = eyebrow.toUpperCase()
+      const tw = g.measureText(text).width
+      const dash = Math.round(W * 0.035)
+      const gap = Math.round(eyeSize * 0.6)
+      const lineY = eyeBase - Math.round(eyeSize * 0.33)
+      const textX = pad + dash + gap
+      g.fillStyle = eyebrowColor
+      g.beginPath(); g.roundRect(pad, lineY - 2, dash, 4, 2); g.fill()
+      g.beginPath(); g.roundRect(textX + tw + gap, lineY - 2, dash, 4, 2); g.fill()
+      g.fillText(text, textX, eyeBase)
       setSpacing(g, 0)
     }
     g.font = font(800, headSize)
-    g.fillStyle = '#FFFFFF'
+    g.fillStyle = input.textColors.headline
     lines.forEach((ln, i) => g.fillText(ln, pad, headFirst + i * lineH))
     if (subhead) {
       g.font = font(800, eyeSize)
-      g.fillStyle = GREEN
+      g.fillStyle = input.textColors.subhead
       setSpacing(g, eyeSize * 0.1)
       g.fillText(subhead.toUpperCase(), pad, subBase)
       setSpacing(g, 0)
     }
   }
 
-  // Branding mark: wheeled = "Premier Compliance" wordmark bottom-right (teal "o");
-  // standard = the wheel logo top-left.
+  // Branding mark. Wheeled = "Premier Compliance" wordmark (teal "o") in a navy pill
+  // box, placed per markPos; standard = the wheel logo top-left.
   if (wheeled) {
-    const wm = Math.round(W * 0.026)
-    g.font = font(700, wm)
-    setSpacing(g, 0.3)
-    const a = 'Premier C', o = 'o', c = 'mpliance'
-    const wc = g.measureText(c).width, wo = g.measureText(o).width
-    g.textAlign = 'right'
-    g.fillStyle = '#FFFFFF'; g.fillText(c, W - pad, H - pad)
-    g.fillStyle = TEAL; g.fillText(o, W - pad - wc, H - pad)
-    g.fillStyle = '#FFFFFF'; g.fillText(a, W - pad - wc - wo, H - pad)
-    g.textAlign = 'left'
-    setSpacing(g, 0)
+    drawWordmarkPill(g, W, H, pad, input.markPos)
   } else if (input.logo) {
     const logoW = Math.round(W * 0.072)
     g.drawImage(input.logo, pad, pad, logoW, logoW)
   }
+}
+
+function drawWordmarkPill(g: Ctx, W: number, H: number, pad: number, pos: MarkPos) {
+  const wm = Math.round(W * 0.026)
+  g.font = font(700, wm)
+  setSpacing(g, 0.3)
+  const a = 'Premier C', o = 'o', c = 'mpliance'
+  const wa = g.measureText(a).width, wo = g.measureText(o).width, wc = g.measureText(c).width
+  const textW = wa + wo + wc
+  const px = Math.round(wm * 0.9), py = Math.round(wm * 0.55)
+  const pillW = textW + px * 2, pillH = wm + py * 2
+  const [v, h] = pos.split('-') as ['top' | 'bottom', 'left' | 'centre' | 'right']
+  const x = h === 'left' ? pad : h === 'right' ? W - pad - pillW : (W - pillW) / 2
+  const y = v === 'top' ? pad : H - pad - pillH
+  g.fillStyle = hexA(NAVY, 0.82)
+  g.beginPath(); g.roundRect(x, y, pillW, pillH, pillH / 2); g.fill()
+  const baseline = y + py + wm * 0.78
+  g.textAlign = 'left'
+  g.fillStyle = '#FFFFFF'; g.fillText(a, x + px, baseline)
+  g.fillStyle = TEAL; g.fillText(o, x + px + wa, baseline)
+  g.fillStyle = '#FFFFFF'; g.fillText(c, x + px + wa + wo, baseline)
+  setSpacing(g, 0)
 }
 
 // ---- helpers for the page ----------------------------------------------------
@@ -249,11 +336,13 @@ export function alphaBbox(img: HTMLImageElement): { x0: number; y0: number; x1: 
 }
 
 // Zoom so the subject fills ~86% of the frame height (and ≤78% of its width), with
-// ~6% headroom and the subject biased right of centre — room for the wheel on the left.
+// ~6% headroom and the subject biased away from the wheel panel: right of centre when
+// the wheel is on the right, left of centre when it's on the left, centred for top.
 export function autoFrame(
   bbox: ReturnType<typeof alphaBbox>,
   base: { width: number; height: number },
   ratio: Ratio,
+  side: WheelSide = 'right',
 ): View {
   if (!bbox) return DEFAULT_VIEW
   const { w: W, h: H } = DIMS[ratio]
@@ -264,7 +353,8 @@ export function autoFrame(
   const zoom = Math.max(1, Math.min(MAX_ZOOM, Math.min((H * 0.86) / bh, (W * 0.78) / bw) / cover))
   const s = cover * zoom
   const dw = base.width * s, dh = base.height * s
-  const panX = W * 0.6 - ((bx0 + bx1) / 2) * s - (W - dw) / 2
+  const bias = side === 'right' ? 0.6 : side === 'left' ? 0.4 : 0.5
+  const panX = W * bias - ((bx0 + bx1) / 2) * s - (W - dw) / 2
   const panY = H * 0.06 - by0 * s - (H - dh) / 2
   return { zoom, panX, panY }
 }
@@ -272,7 +362,7 @@ export function autoFrame(
 // Auto colour: the value colour whose hue is furthest from the photo's average hue;
 // neutral photos rotate by a size-derived seed (mirrors _shared/wheelcolor.ts).
 export function pickColor(img: HTMLImageElement): Color {
-  const HUE: Record<Color, number> = { blue: 213, green: 137, orange: 29 }
+  const HUE: Record<Color, number> = { blue: 213, green: 157, orange: 29 }
   const all: Color[] = ['blue', 'green', 'orange']
   const c = document.createElement('canvas')
   c.width = 24; c.height = 24
