@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   cutoutSubject,
   downloadSource,
+  fetchSubject,
   listImages,
   saveSpotlightToBank,
   signedThumb,
@@ -78,6 +79,41 @@ const HEADLINE_MAX = 80
 const inputCls =
   'w-full px-3 py-2 rounded-lg border border-line focus:outline-none focus:ring-2 focus:ring-teal/40'
 
+// The workshop remembers its settings per photo (in this browser), so moving to
+// another Studio section and back — or reloading — doesn't lose the framing, the
+// text or a cut-out that already cost a Replicate call.
+interface Draft {
+  ratio: Ratio
+  style: SpotStyle
+  color: ColorChoice
+  wheelSide: WheelSide
+  markPos: MarkPos
+  markStyle: MarkStyle
+  textColors: TextColors
+  eyebrow: string
+  headline: string
+  subhead: string
+  view: View
+  subjectUrl: string | null
+  savedAt: number
+}
+const draftKey = (imageId: string) => `studio.spotlight.${imageId}`
+function loadDraft(imageId: string): Draft | null {
+  try {
+    const raw = localStorage.getItem(draftKey(imageId))
+    return raw ? (JSON.parse(raw) as Draft) : null
+  } catch {
+    return null
+  }
+}
+function saveDraft(imageId: string, draft: Draft) {
+  try {
+    localStorage.setItem(draftKey(imageId), JSON.stringify(draft))
+  } catch {
+    // Storage full or blocked — the live state still works, it just won't persist.
+  }
+}
+
 // Colour control for a text element: the brand palette as swatches (hex in the
 // tooltip), a free colour picker for anything else, and an optional "Auto".
 function ColourField({
@@ -151,6 +187,7 @@ export function Spotlight() {
   const [base, setBase] = useState<HTMLImageElement | null>(null)
   const [autoColor, setAutoColor] = useState<Color>('blue')
   const [subject, setSubject] = useState<HTMLImageElement | null>(null)
+  const [subjectUrl, setSubjectUrl] = useState<string | null>(null)
   const [bbox, setBbox] = useState<ReturnType<typeof alphaBbox>>(null)
   const [logo, setLogo] = useState<HTMLImageElement | null>(null)
   const [fontsReady, setFontsReady] = useState(false)
@@ -162,6 +199,8 @@ export function Spotlight() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
+  // A view restored from a draft, applied once the photo (and cut-out, if any) has loaded.
+  const pendingViewRef = useRef<{ view: View; needsSubject: boolean } | null>(null)
 
   async function refresh() {
     setLoading(true)
@@ -192,21 +231,40 @@ export function Spotlight() {
   const active = useMemo(() => items.find((i) => i.id === imageId) ?? null, [items, imageId])
 
   // Load the source photo as bytes (keeps the canvas exportable). Switching source
-  // drops the cut-out, the saved result and the text, so a new photo starts clean.
-  // Keyed on the image's id/path, NOT the row object: refreshing the bank list after a
-  // save produces a new object for the same image, and that must not reset the workshop.
+  // restores that photo's remembered draft if there is one; otherwise the text clears
+  // and a new photo starts clean. Keyed on the image's id/path, NOT the row object:
+  // refreshing the bank list after a save produces a new object for the same image,
+  // and that must not reset the workshop.
   const activeId = active?.id ?? null
   const activePath = active?.storage_path ?? null
   useEffect(() => {
+    const draft = activeId ? loadDraft(activeId) : null
     setBase(null)
     setSubject(null)
+    setSubjectUrl(null)
     setBbox(null)
     setSaved(null)
     setError(null)
-    setView(DEFAULT_VIEW)
-    setEyebrow('')
-    setHeadline('')
-    setSubhead('')
+    if (draft) {
+      setRatio(draft.ratio)
+      setStyle(draft.style)
+      setColor(draft.color)
+      setWheelSide(draft.wheelSide)
+      setMarkPos(draft.markPos)
+      setMarkStyle(draft.markStyle)
+      setTextColors(draft.textColors)
+      setEyebrow(draft.eyebrow)
+      setHeadline(draft.headline)
+      setSubhead(draft.subhead)
+      setView(draft.view)
+      pendingViewRef.current = { view: draft.view, needsSubject: Boolean(draft.subjectUrl) }
+    } else {
+      setView(DEFAULT_VIEW)
+      setEyebrow('')
+      setHeadline('')
+      setSubhead('')
+      pendingViewRef.current = null
+    }
     if (!activePath) return
     let cancelled = false
     downloadSource(activePath)
@@ -217,11 +275,36 @@ export function Spotlight() {
         setAutoColor(pickColor(img))
       })
       .catch((err) => !cancelled && setError(err instanceof Error ? err.message : String(err)))
+    if (draft?.subjectUrl) {
+      const url = draft.subjectUrl
+      fetchSubject(url)
+        .then(loadImage)
+        .then((img) => {
+          if (cancelled) return
+          setSubject(img)
+          setBbox(alphaBbox(img))
+          setSubjectUrl(url)
+        })
+        .catch(() => {
+          // The stored cut-out is gone — fall back to needing a fresh cut-out.
+          if (!cancelled && pendingViewRef.current) pendingViewRef.current.needsSubject = false
+        })
+    }
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, activePath])
+
+  // Remember the workshop per photo. Guarded on `base` so the reset above never
+  // overwrites a draft with blank defaults before it has been restored.
+  useEffect(() => {
+    if (!activeId || !base) return
+    saveDraft(activeId, {
+      ratio, style, color, wheelSide, markPos, markStyle, textColors,
+      eyebrow, headline, subhead, view, subjectUrl, savedAt: Date.now(),
+    })
+  }, [activeId, base, ratio, style, color, wheelSide, markPos, markStyle, textColors, eyebrow, headline, subhead, view, subjectUrl])
 
   // Cut-out: the wheel colour follows its position (right = blue, top = orange,
   // left = green) unless overridden. Colourings: Auto = best fit for the photo.
@@ -234,7 +317,16 @@ export function Spotlight() {
   }, [ratio, style, resolvedColor, wheelSide, markPos, markStyle, textColors, eyebrow, headline, subhead, view, subject])
 
   // Re-frame when the ratio changes: zoom on the subject for Cut-out, else plain cover.
+  // A view restored from a draft wins once its photo (and cut-out) have loaded.
   useEffect(() => {
+    const pending = pendingViewRef.current
+    if (pending) {
+      if (base && (!pending.needsSubject || bbox)) {
+        pendingViewRef.current = null
+        setView(pending.view)
+      }
+      return
+    }
     setView(style === 'cutout' && bbox && base ? autoFrame(bbox, base, ratio, wheelSide) : DEFAULT_VIEW)
   }, [ratio, style, bbox, base, wheelSide])
 
@@ -280,9 +372,11 @@ export function Spotlight() {
     setCutting(true)
     setError(null)
     try {
-      const img = await loadImage(await cutoutSubject(active.id))
+      const { blob, url } = await cutoutSubject(active.id)
+      const img = await loadImage(blob)
       const bb = alphaBbox(img)
       setSubject(img)
+      setSubjectUrl(url)
       setBbox(bb)
       setView(autoFrame(bb, base, ratio, wheelSide))
     } catch (err) {

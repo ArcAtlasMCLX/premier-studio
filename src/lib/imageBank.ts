@@ -126,7 +126,9 @@ export async function downloadSource(path: string): Promise<Blob> {
 
 // Ask the edge function for the background-removed subject only (Replicate, ~5–10 s).
 // Compositing then happens in the browser — see lib/spotlightCanvas.ts.
-export async function cutoutSubject(imageId: string): Promise<Blob> {
+// Returns the subject PNG plus its public URL, so the workshop can remember the
+// cut-out per photo and reload it without another Replicate call.
+export async function cutoutSubject(imageId: string): Promise<{ blob: Blob; url: string }> {
   const { data, error } = await supabase.functions.invoke('process-image', {
     body: { op: 'cutout', source: 'bank', imageId },
   })
@@ -134,7 +136,12 @@ export async function cutoutSubject(imageId: string): Promise<Blob> {
   if (!data?.subjectUrl) {
     throw new Error(String(data?.error || 'Couldn’t cut out the subject — please try again.'))
   }
-  const res = await fetch(data.subjectUrl as string)
+  const url = data.subjectUrl as string
+  return { blob: await fetchSubject(url), url }
+}
+
+export async function fetchSubject(url: string): Promise<Blob> {
+  const res = await fetch(url)
   if (!res.ok) throw new Error('Could not fetch the cut-out subject')
   return res.blob()
 }
