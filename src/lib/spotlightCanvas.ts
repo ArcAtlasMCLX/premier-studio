@@ -306,8 +306,9 @@ function drawRing(g: Ctx, cx: number, cy: number, r: number, stroke: number) {
 }
 
 function drawWordmarkPill(g: Ctx, W: number, H: number, pad: number, pos: MarkPos, style: MarkStyle) {
-  const wm = Math.round(W * 0.026)
-  g.font = font(700, wm)
+  // Regular weight, not bold: the brand wordmark is a light geometric face (Zach, 21 Oct).
+  const wm = Math.round(W * 0.027)
+  g.font = font(500, wm)
   setSpacing(g, 0.3)
   const a = 'Premier C', o = 'o', c = 'mpliance'
   const wa = g.measureText(a).width, wo = g.measureText(o).width, wc = g.measureText(c).width
@@ -329,7 +330,7 @@ function drawWordmarkPill(g: Ctx, W: number, H: number, pad: number, pos: MarkPo
   g.shadowBlur = 0
   // The "o" is the ring: sized to the letter's x-height, centred on its advance.
   const xh = wm * 0.53
-  drawRing(g, x + px + wa + wo / 2, baseline - xh / 2, xh / 2 - wm * 0.045, wm * 0.11)
+  drawRing(g, x + px + wa + wo / 2, baseline - xh / 2, xh / 2 - wm * 0.04, wm * 0.085)
   setSpacing(g, 0)
 }
 
@@ -439,7 +440,7 @@ export async function ensureFonts(): Promise<void> {
     await Promise.all([
       document.fonts.load(font(800, 40)),
       document.fonts.load(font(800, 40, true)),
-      document.fonts.load(font(700, 40)),
+      document.fonts.load(font(500, 40)),
     ])
   } catch {
     // Font API unavailable — the system fallback is fine.
